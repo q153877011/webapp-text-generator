@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import cn from 'classnames'
 import { useBoolean, useClickAway } from 'ahooks'
@@ -7,6 +7,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline'
 import {
   ArrowRightIcon,
   ArrowPathIcon,
+  ClockIcon,
 } from '@heroicons/react/24/solid'
 import RunOnce from '../run-once'
 import RunBatch from '../run-batch'
@@ -16,13 +17,31 @@ import Loading from '@/app/components/base/loading'
 import AppUnavailable from '@/app/components/app-unavailable'
 import Toast from '@/app/components/base/toast'
 import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
-import { fetchAppParams, updateFeedback } from '@/service'
+import { fetchAppParams, fetchWorkflowLogs, updateFeedback } from '@/service'
 import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
 import { Resolution, TransferMethod } from '@/types/app'
 import { changeLanguage } from '@/i18n/i18next-config'
 import { API_KEY, APP_ID, APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
 import { userInputsFormToPromptVariables } from '@/utils/prompt'
 import s from './cool-styles.module.css'
+
+type WorkflowLogItem = {
+  id: string
+  workflow_run: {
+    id: string
+    version: string
+    status: string
+    error: string | null
+    elapsed_time: number
+    total_tokens: number
+    total_steps: number
+    created_at: number
+    finished_at: number
+  }
+  created_from: string
+  created_by_role: string
+  created_at: number
+}
 
 const GROUP_SIZE = 5
 
@@ -96,6 +115,32 @@ const CoolTextGeneration = () => {
 
   const [controlSend, setControlSend] = useState(0)
   const [controlStopResponding, setControlStopResponding] = useState(0)
+
+  // History state
+  const [historyLogs, setHistoryLogs] = useState<WorkflowLogItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyTotal, setHistoryTotal] = useState(0)
+
+  const loadHistoryLogs = useCallback(async (page = 1, append = false) => {
+    setHistoryLoading(true)
+    try {
+      const res: any = await fetchWorkflowLogs({ page, limit: 10 })
+      if (res && res.data) {
+        setHistoryLogs(prev => append ? [...prev, ...res.data] : res.data)
+        setHistoryHasMore(res.has_more ?? false)
+        setHistoryTotal(res.total ?? 0)
+        setHistoryPage(page)
+      }
+    }
+    catch (e: any) {
+      notify({ type: 'error', message: e.message || 'Failed to load history' })
+    }
+    finally {
+      setHistoryLoading(false)
+    }
+  }, [notify])
   const [visionConfig, setVisionConfig] = useState<VisionSettings>({
     enabled: false,
     number_limits: 2,
@@ -479,6 +524,16 @@ const CoolTextGeneration = () => {
               >
                 {t('app.generation.tabs.batch')}
               </button>
+              <button
+                className={cn(s.tabItem, currTab === 'history' && s.tabItemActive)}
+                onClick={() => {
+                  setCurrTab('history')
+                  if (historyLogs.length === 0) loadHistoryLogs(1)
+                }}
+              >
+                <ClockIcon className="w-3.5 h-3.5 inline-block mr-1 -mt-px" />
+                History
+              </button>
             </div>
 
             {/* Form area */}
@@ -499,6 +554,80 @@ const CoolTextGeneration = () => {
                   onSend={handleRunBatch}
                   isAllFinished={allTaskRuned}
                 />
+              </div>
+              <div className={cn(currTab === 'history' ? 'block' : 'hidden')}>
+                {/* History panel */}
+                <div className={s.historyPanel}>
+                  <div className={s.historyHeader}>
+                    <div className={s.historyHeaderLeft}>
+                      <span className={s.historyCount}>{historyTotal} runs</span>
+                    </div>
+                    <button
+                      className={s.ghostButton}
+                      onClick={() => loadHistoryLogs(1)}
+                      style={{ padding: '4px 10px', fontSize: '11px' }}
+                    >
+                      <ArrowPathIcon className="w-3 h-3" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {historyLoading && historyLogs.length === 0 && (
+                    <div className="flex justify-center py-8">
+                      <Loading type="area" />
+                    </div>
+                  )}
+
+                  {!historyLoading && historyLogs.length === 0 && (
+                    <div className={s.historyEmpty}>
+                      <ClockIcon className="w-8 h-8 text-gray-300 mb-2" />
+                      <p>No workflow runs yet</p>
+                      <p className="text-xs mt-1">Run a generation to see it here</p>
+                    </div>
+                  )}
+
+                  <div className={s.historyList}>
+                    {historyLogs.map(log => (
+                      <div key={log.id} className={s.historyItem}>
+                        <div className={s.historyItemHeader}>
+                          <span className={cn(
+                            s.historyStatus,
+                            log.workflow_run.status === 'succeeded' && s.historyStatusSuccess,
+                            log.workflow_run.status === 'failed' && s.historyStatusFailed,
+                            log.workflow_run.status === 'stopped' && s.historyStatusStopped,
+                          )}>
+                            {log.workflow_run.status}
+                          </span>
+                          <span className={s.historyTime}>
+                            {new Date(log.created_at * 1000).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className={s.historyItemMeta}>
+                          <span>{log.workflow_run.total_steps} steps</span>
+                          <span className={s.historyDot}>·</span>
+                          <span>{log.workflow_run.elapsed_time.toFixed(2)}s</span>
+                          <span className={s.historyDot}>·</span>
+                          <span>{log.workflow_run.total_tokens} tokens</span>
+                        </div>
+                        {log.workflow_run.error && (
+                          <div className={s.historyError}>
+                            {log.workflow_run.error}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {historyHasMore && (
+                    <button
+                      className={cn(s.ghostButton, s.historyLoadMore)}
+                      onClick={() => loadHistoryLogs(historyPage + 1, true)}
+                      disabled={historyLoading}
+                    >
+                      {historyLoading ? 'Loading...' : 'Load More'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

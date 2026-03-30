@@ -336,11 +336,149 @@
 /* ── Mobile Drawer ── */
 .drawerOverlay {
   position: fixed;
-  inset: 0;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 50;
   background: rgba(42, 38, 32, 0.25);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── History Panel ── */
+.historyPanel {
+  padding: 4px 0;
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.historyHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.historyCount {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8c8578;
+  letter-spacing: 0.02em;
+}
+
+.historyEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: #b0a89e;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.historyItem {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #faf8f5;
+  border: 1px solid #ece8e1;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: default;
+}
+
+.historyItem:hover {
+  border-color: #d5cfc7;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.historyItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.historyStatus {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: capitalize;
+}
+
+.historyStatusSuccess {
+  background: #eef8f1;
+  color: #2a7d4b;
+  border: 1px solid #c3e6ce;
+}
+
+.historyStatusFailed {
+  background: #fef0ee;
+  color: #c53a2a;
+  border: 1px solid #f5d0cc;
+}
+
+.historyStatusStopped {
+  background: #fef9ee;
+  color: #9a6c2e;
+  border: 1px solid #efe0c3;
+}
+
+.historyTime {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  color: #b0a89e;
+  letter-spacing: 0.01em;
+}
+
+.historyItemMeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: #8c8578;
+}
+
+.historyDot {
+  color: #d5cfc7;
+}
+
+.historyError {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fef0ee;
+  border: 1px solid #f5d0cc;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  color: #c53a2a;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.historyLoadMore {
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+  padding: 8px 16px !important;
 }
 
 /* ====================================

@@ -553,8 +553,9 @@ const TextGeneration = () => {
 
         {(!isPC && isShowResSidebar) && (
           <div
-            className={cn('fixed z-50 inset-0', isTablet ? 'pl-[128px]' : 'pl-6')}
+            className={cn('fixed z-50 left-0 right-0 bottom-0', isTablet ? 'pl-[128px]' : 'pl-6')}
             style={{
+              top: '48px',
               background: 'rgba(35, 56, 118, 0.2)',
             }}
           >

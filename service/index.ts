@@ -41,6 +41,15 @@ export const fetchAppParams = async () => {
   return get('parameters')
 }
 
+export const fetchWorkflowLogs = async (params?: { page?: number; limit?: number; status?: string; keyword?: string }) => {
+  const query: Record<string, string> = {}
+  if (params?.page) query.page = String(params.page)
+  if (params?.limit) query.limit = String(params.limit)
+  if (params?.status) query.status = params.status
+  if (params?.keyword) query.keyword = params.keyword
+  return get('workflows/logs', { params: query })
+}
+
 export const updateFeedback = async ({ url, body }: { url: string; body: Feedbacktype }) => {
   return post(url, { body })
 }
