@@ -10,7 +10,10 @@
 /* ── Page Canvas ── */
 .pageBg {
   position: fixed;
-  inset: 0;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: #f6f3ee;
   /* subtle paper noise via CSS – tiny repeated radial-gradients */
   background-image:

@@ -47,3 +47,9 @@ yarn.lock
 
 # pmpm
 pnpm-lock.yaml
+
+# EdgeOne build output (may contain inlined env vars)
+.edgeone/
+
+# Playwright MCP logs
+.playwright-mcp/
