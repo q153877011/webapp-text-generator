@@ -10,10 +10,7 @@
 /* ── Page Canvas ── */
 .pageBg {
   position: fixed;
-  top: 48px;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: #f6f3ee;
   /* subtle paper noise via CSS – tiny repeated radial-gradients */
   background-image:
@@ -339,7 +336,7 @@
 /* ── Mobile Drawer ── */
 .drawerOverlay {
   position: fixed;
-  top: 48px;
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
@@ -683,4 +680,225 @@
 
 .warmTheme :global(.text-\[\#D92D20\]) {
   color: #c53a2a !important;
+}
+
+/* ── Stop Button ── */
+.stopButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c53a2a;
+  background: #fef0ee;
+  border: 1px solid #f5d0cc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+}
+
+.stopButton:hover {
+  background: #fde4e1;
+  border-color: #e8a9a1;
+  color: #a82418;
+}
+
+.stopButton svg {
+  animation: stopPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stopPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── History Item Clickable ── */
+.historyItemClickable {
+  cursor: pointer;
+}
+
+.historyItemClickable:hover {
+  border-color: #c8754a;
+  box-shadow: 0 2px 8px rgba(200, 117, 74, 0.08);
+}
+
+.historyItemClickable:active {
+  transform: scale(0.995);
+}
+
+/* ── History Detail Panel ── */
+.historyDetailOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  background: rgba(42, 38, 32, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.historyDetailPanel {
+  background: #fffefa;
+  border-radius: 16px;
+  border: 1px solid #e0dbd3;
+  width: 90%;
+  max-width: 680px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(42, 38, 32, 0.12), 0 2px 8px rgba(42, 38, 32, 0.06);
+  animation: editorialFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.historyDetailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e8e3db;
+}
+
+.historyDetailTitle {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 20px;
+  font-weight: 400;
+  color: #1a1a1a;
+}
+
+.historyDetailBody {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.historyDetailSection {
+  margin-bottom: 20px;
+}
+
+.historyDetailSectionTitle {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8c8578;
+  margin-bottom: 10px;
+}
+
+.historyDetailContent {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #faf8f5;
+  border: 1px solid #ece8e1;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #2c2c2c;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.historyDetailMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #faf8f5;
+  border: 1px solid #ece8e1;
+}
+
+.historyDetailMetaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.historyDetailMetaLabel {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b0a89e;
+}
+
+.historyDetailMetaValue {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2c2c2c;
+}
+
+/* ── Node Trace List ── */
+.nodeTraceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nodeTraceItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #faf8f5;
+  border: 1px solid #ece8e1;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: #5c564e;
+}
+
+.nodeTraceIndex {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e8e3db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #8c8578;
+  flex-shrink: 0;
+}
+
+.nodeTraceName {
+  flex: 1;
+  font-weight: 500;
+  color: #2c2c2c;
+}
+
+.nodeTraceTime {
+  font-size: 11px;
+  color: #b0a89e;
+}
+
+.nodeTraceStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nodeTraceStatusDotSuccess {
+  background: #2a7d4b;
+}
+
+.nodeTraceStatusDotFailed {
+  background: #c53a2a;
+}
+
+.nodeTraceStatusDotRunning {
+  background: #c8754a;
 }

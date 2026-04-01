@@ -104,6 +104,7 @@ export type IOnWorkflowStarted = (workflowStarted: WorkflowStartedResponse) => v
 export type IOnWorkflowFinished = (workflowFinished: WorkflowFinishedResponse) => void
 export type IOnNodeStarted = (nodeStarted: NodeStartedResponse) => void
 export type IOnNodeFinished = (nodeFinished: NodeFinishedResponse) => void
+export type IOnTaskId = (taskId: string) => void
 
 type IOtherOptions = {
   needAllResponseContent?: boolean
@@ -114,6 +115,8 @@ type IOtherOptions = {
   onWorkflowFinished?: IOnWorkflowFinished
   onNodeStarted?: IOnNodeStarted
   onNodeFinished?: IOnNodeFinished
+  onTaskId?: IOnTaskId
+  abortController?: AbortController
 }
 
 function unicodeToChar(text: string) {
@@ -130,6 +133,7 @@ const handleStream = (
   onWorkflowFinished?: IOnWorkflowFinished,
   onNodeStarted?: IOnNodeStarted,
   onNodeFinished?: IOnNodeFinished,
+  onTaskId?: IOnTaskId,
 ) => {
   if (!response.ok)
     throw new Error('Network response was not ok')
@@ -139,6 +143,7 @@ const handleStream = (
   let buffer = ''
   let bufferObj: any
   let isFirstMessage = true
+  let taskIdReported = false
   function read() {
     reader?.read().then((result: any) => {
       if (result.done) {
@@ -160,6 +165,11 @@ const handleStream = (
               messageId: bufferObj?.id,
             })
             return
+          }
+          // Report task_id on first occurrence
+          if (!taskIdReported && bufferObj.task_id) {
+            taskIdReported = true
+            onTaskId?.(bufferObj.task_id)
           }
           if (bufferObj.event === 'message') {
             onData(unicodeToChar(bufferObj.answer), isFirstMessage, {
@@ -322,6 +332,8 @@ export const ssePost = (
     onWorkflowFinished,
     onNodeStarted,
     onNodeFinished,
+    onTaskId,
+    abortController,
   }: IOtherOptions) => {
   const options = Object.assign({}, baseOptions, {
     method: 'POST',
@@ -333,6 +345,9 @@ export const ssePost = (
   const { body } = options
   if (body)
     options.body = JSON.stringify(body)
+
+  if (abortController)
+    options.signal = abortController.signal
 
   globalThis.fetch(urlWithPrefix, options)
     .then((res: any) => {
@@ -352,8 +367,13 @@ export const ssePost = (
           return
         }
         onData?.(str, isFirstMessage, moreInfo)
-      }, onCompleted, onWorkflowStarted, onWorkflowFinished, onNodeStarted, onNodeFinished)
+      }, onCompleted, onWorkflowStarted, onWorkflowFinished, onNodeStarted, onNodeFinished, onTaskId)
     }).catch((e) => {
+      if (e?.name === 'AbortError') {
+        // Request was intentionally aborted (user stopped generation).
+        // Do not call onCompleted or onError — the caller's stop handler manages cleanup.
+        return
+      }
       Toast.notify({ type: 'error', message: e })
       onError?.(e)
     })

@@ -8,6 +8,7 @@ import {
   ArrowRightIcon,
   ArrowPathIcon,
   ClockIcon,
+  StopIcon,
 } from '@heroicons/react/24/solid'
 import RunOnce from '../run-once'
 import RunBatch from '../run-batch'
@@ -17,11 +18,11 @@ import Loading from '@/app/components/base/loading'
 import AppUnavailable from '@/app/components/app-unavailable'
 import Toast from '@/app/components/base/toast'
 import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
-import { fetchAppParams, fetchWorkflowLogs, updateFeedback } from '@/service'
+import { fetchAppMeta, fetchAppParams, fetchWorkflowLogs, fetchWorkflowRunDetail, updateFeedback } from '@/service'
 import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
 import { Resolution, TransferMethod } from '@/types/app'
 import { changeLanguage } from '@/i18n/i18next-config'
-import { API_KEY, APP_ID, APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
+import { API_KEY, APP_ID, APP_INFO as DEFAULT_APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
 import { userInputsFormToPromptVariables } from '@/utils/prompt'
 import s from './cool-styles.module.css'
 
@@ -86,6 +87,14 @@ const CoolTextGeneration = () => {
   const [messageId, setMessageId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedbacktype>({ rating: null })
 
+  // Phase 1.3: Dynamic APP_INFO from /meta API
+  const [appInfo, setAppInfo] = useState(DEFAULT_APP_INFO)
+
+  // Phase 1.2: History detail state
+  const [historyDetailId, setHistoryDetailId] = useState<string | null>(null)
+  const [historyDetail, setHistoryDetail] = useState<any>(null)
+  const [historyDetailLoading, setHistoryDetailLoading] = useState(false)
+
   const handleFeedback = async (feedback: Feedbacktype) => {
     await updateFeedback({ url: `/messages/${messageId}/feedbacks`, body: { rating: feedback.rating } })
     setFeedback(feedback)
@@ -141,6 +150,30 @@ const CoolTextGeneration = () => {
       setHistoryLoading(false)
     }
   }, [notify])
+
+  // Phase 1.2: Load workflow run detail
+  const loadHistoryDetail = useCallback(async (runId: string) => {
+    setHistoryDetailId(runId)
+    setHistoryDetailLoading(true)
+    setHistoryDetail(null)
+    try {
+      const res: any = await fetchWorkflowRunDetail(runId)
+      setHistoryDetail(res)
+    }
+    catch (e: any) {
+      notify({ type: 'error', message: e.message || 'Failed to load run detail' })
+      setHistoryDetailId(null)
+    }
+    finally {
+      setHistoryDetailLoading(false)
+    }
+  }, [notify])
+
+  const closeHistoryDetail = useCallback(() => {
+    setHistoryDetailId(null)
+    setHistoryDetail(null)
+  }, [])
+
   const [visionConfig, setVisionConfig] = useState<VisionSettings>({
     enabled: false,
     number_limits: 2,
@@ -153,8 +186,14 @@ const CoolTextGeneration = () => {
     setIsCallBatchAPI(false)
     setControlSend(Date.now())
     setAllTaskList([])
+    setResponsingTrue()
     showResSidebar()
   }
+
+  const handleStopResponding = useCallback(() => {
+    setControlStopResponding(Date.now())
+    setResponsingFalse()
+  }, [])
 
   const [controlRetry, setControlRetry] = useState(0)
   const handleRetryAllFailedTask = () => {
@@ -305,6 +344,7 @@ const CoolTextGeneration = () => {
   }
 
   const handleCompleted = (completionRes: string, taskId?: number, isSuccess?: boolean) => {
+    setResponsingFalse()
     const allTasklistLatest = getLatestTaskList()
     const batchCompletionResLatest = getBatchCompletionRes()
     const pendingTaskList = allTasklistLatest.filter(task => task.status === TaskStatus.pending)
@@ -335,7 +375,7 @@ const CoolTextGeneration = () => {
     }
     (async () => {
       try {
-        changeLanguage(APP_INFO.default_language)
+        changeLanguage(DEFAULT_APP_INFO.default_language)
         const { user_input_form, file_upload, system_parameters }: any = await fetchAppParams()
         const prompt_variables = userInputsFormToPromptVariables(user_input_form)
         setPromptConfig({ prompt_template: '', prompt_variables } as PromptConfig)
@@ -343,6 +383,20 @@ const CoolTextGeneration = () => {
           ...file_upload?.image,
           image_file_size_limit: system_parameters?.image_file_size_limit || 0,
         })
+
+        // Phase 1.3: Fetch app meta info (icon, name, description)
+        try {
+          const meta: any = await fetchAppMeta()
+          if (meta) {
+            setAppInfo(prev => ({
+              ...prev,
+              ...(meta.tool_icons ? { tool_icons: meta.tool_icons } : {}),
+            }))
+          }
+        }
+        catch {
+          // Meta fetch is non-critical, use defaults
+        }
       }
       catch (e: any) {
         if (e.status === 404) setAppUnavailable(true)
@@ -355,9 +409,9 @@ const CoolTextGeneration = () => {
   }, [])
 
   useEffect(() => {
-    if (APP_INFO?.title)
-      document.title = `${APP_INFO.title} - Powered by Dify`
-  }, [APP_INFO?.title])
+    if (appInfo?.title)
+      document.title = `${appInfo.title} - Powered by Dify`
+  }, [appInfo?.title])
 
   const [isShowResSidebar, { setTrue: showResSidebar, setFalse: hideResSidebar }] = useBoolean(false)
   const resRef = useRef<HTMLDivElement>(null)
@@ -414,6 +468,12 @@ const CoolTextGeneration = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isResponsing && (
+            <button className={s.stopButton} onClick={handleStopResponding}>
+              <StopIcon className="w-3.5 h-3.5" />
+              <span>{t('app.generation.stopResponding') || 'Stop'}</span>
+            </button>
+          )}
           {allFailedTaskList.length > 0 && (
             <div className="flex items-center gap-2">
               <span className={cn(s.badge, s.badgeError)}>
@@ -458,7 +518,7 @@ const CoolTextGeneration = () => {
   if (appUnavailable)
     return <AppUnavailable isUnknwonReason={isUnknwonReason} errMessage={!hasSetAppConfig ? 'Please set APP_ID and API_KEY in config/index.tsx' : ''} />
 
-  if (!APP_INFO || !promptConfig) {
+  if (!appInfo || !promptConfig) {
     return (
       <div className={s.pageBg}>
         <div className={cn(s.container, 'flex items-center justify-center')}>
@@ -491,9 +551,9 @@ const CoolTextGeneration = () => {
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <span className={s.titleLabel}>Text Generator</span>
-                  <h1 className={s.titleMain}>{APP_INFO.title}</h1>
-                  {APP_INFO.description && (
-                    <p className={s.titleDesc}>{APP_INFO.description}</p>
+                  <h1 className={s.titleMain}>{appInfo.title}</h1>
+                  {appInfo.description && (
+                    <p className={s.titleDesc}>{appInfo.description}</p>
                   )}
                 </div>
                 {!isPC && (
@@ -588,7 +648,12 @@ const CoolTextGeneration = () => {
 
                   <div className={s.historyList}>
                     {historyLogs.map(log => (
-                      <div key={log.id} className={s.historyItem}>
+                      <div
+                        key={log.id}
+                        className={cn(s.historyItem, IS_WORKFLOW && s.historyItemClickable)}
+                        onClick={() => IS_WORKFLOW && loadHistoryDetail(log.workflow_run.id)}
+                        title={IS_WORKFLOW ? 'Click to view details' : undefined}
+                      >
                         <div className={s.historyItemHeader}>
                           <span className={cn(
                             s.historyStatus,
@@ -633,13 +698,13 @@ const CoolTextGeneration = () => {
 
             {/* Copyright */}
             <div className={cn(s.copyright, 'mt-6 pt-4')} style={{ borderTop: '1px solid #e8e3db' }}>
-              <span>© {APP_INFO.copyright || APP_INFO.title} {(new Date()).getFullYear()}</span>
-              {APP_INFO.privacy_policy && (
+              <span>© {appInfo.copyright || appInfo.title} {(new Date()).getFullYear()}</span>
+              {appInfo.privacy_policy && (
                 <>
                   <span className="mx-2">·</span>
                   <span>
                     {t('app.generation.privacyPolicyLeft')}
-                    <a href={APP_INFO.privacy_policy} target="_blank" rel="noreferrer">
+                    <a href={appInfo.privacy_policy} target="_blank" rel="noreferrer">
                       {t('app.generation.privacyPolicyMiddle')}
                     </a>
                     {t('app.generation.privacyPolicyRight')}
@@ -673,6 +738,85 @@ const CoolTextGeneration = () => {
           </div>
         )}
       </div>
+
+      {/* Phase 1.2: History Detail Modal */}
+      {historyDetailId && (
+        <div className={s.historyDetailOverlay} onClick={closeHistoryDetail}>
+          <div className={s.historyDetailPanel} onClick={(e) => e.stopPropagation()}>
+            <div className={s.historyDetailHeader}>
+              <span className={s.historyDetailTitle}>Workflow Run Detail</span>
+              <button className={s.ghostButton} onClick={closeHistoryDetail} style={{ padding: '6px 10px' }}>
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <div className={cn(s.historyDetailBody, s.customScroll)}>
+              {historyDetailLoading && (
+                <div className="flex justify-center py-12">
+                  <Loading type="area" />
+                </div>
+              )}
+              {historyDetail && !historyDetailLoading && (
+                <>
+                  {/* Status & Meta */}
+                  <div className={s.historyDetailSection}>
+                    <div className={s.historyDetailSectionTitle}>Overview</div>
+                    <div className={s.historyDetailMeta}>
+                      <div className={s.historyDetailMetaItem}>
+                        <span className={s.historyDetailMetaLabel}>Status</span>
+                        <span className={s.historyDetailMetaValue}>{historyDetail.status}</span>
+                      </div>
+                      <div className={s.historyDetailMetaItem}>
+                        <span className={s.historyDetailMetaLabel}>Elapsed</span>
+                        <span className={s.historyDetailMetaValue}>{historyDetail.elapsed_time?.toFixed(2)}s</span>
+                      </div>
+                      <div className={s.historyDetailMetaItem}>
+                        <span className={s.historyDetailMetaLabel}>Tokens</span>
+                        <span className={s.historyDetailMetaValue}>{historyDetail.total_tokens}</span>
+                      </div>
+                      <div className={s.historyDetailMetaItem}>
+                        <span className={s.historyDetailMetaLabel}>Steps</span>
+                        <span className={s.historyDetailMetaValue}>{historyDetail.total_steps}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Inputs */}
+                  {historyDetail.inputs && Object.keys(historyDetail.inputs).length > 0 && (
+                    <div className={s.historyDetailSection}>
+                      <div className={s.historyDetailSectionTitle}>Inputs</div>
+                      <div className={s.historyDetailContent}>
+                        {JSON.stringify(historyDetail.inputs, null, 2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Outputs */}
+                  {historyDetail.outputs && Object.keys(historyDetail.outputs).length > 0 && (
+                    <div className={s.historyDetailSection}>
+                      <div className={s.historyDetailSectionTitle}>Outputs</div>
+                      <div className={s.historyDetailContent}>
+                        {typeof historyDetail.outputs === 'string'
+                          ? historyDetail.outputs
+                          : JSON.stringify(historyDetail.outputs, null, 2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {historyDetail.error && (
+                    <div className={s.historyDetailSection}>
+                      <div className={s.historyDetailSectionTitle}>Error</div>
+                      <div className={s.historyError}>
+                        {historyDetail.error}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

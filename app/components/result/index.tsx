@@ -8,7 +8,7 @@ import cn from 'classnames'
 import NoData from '../no-data'
 import TextGenerationRes from './item'
 import Toast from '@/app/components/base/toast'
-import { sendCompletionMessage, sendWorkflowMessage, updateFeedback } from '@/service'
+import { sendCompletionMessage, sendWorkflowMessage, stopCompletionMessage, stopWorkflow, updateFeedback } from '@/service'
 import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings, WorkflowProcess } from '@/types/app'
 import { NodeRunningStatus, TransferMethod, WorkflowRunningStatus } from '@/types/app'
 import Loading from '@/app/components/base/loading'
@@ -50,10 +50,33 @@ const Result: FC<IResultProps> = ({
   completionFiles,
 }) => {
   const [isResponsing, { setTrue: setResponsingTrue, setFalse: setResponsingFalse }] = useBoolean(false)
+  // Use a ref (not state) so the stop effect always reads the current task ID without stale closures
+  const currentTaskIdRef = useRef<string | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   useEffect(() => {
-    if (controlStopResponding)
+    if (controlStopResponding) {
+      // Call server-side stop API
+      const taskId = currentTaskIdRef.current
+      if (taskId) {
+        if (isWorkflow)
+          stopWorkflow(taskId).catch(() => {})
+        else
+          stopCompletionMessage(taskId).catch(() => {})
+      }
+      // Abort client-side SSE connection
+      abortControllerRef.current?.abort()
+      abortControllerRef.current = null
+      currentTaskIdRef.current = null
       setResponsingFalse()
-  }, [controlStopResponding])
+    }
+  }, [controlStopResponding, isWorkflow])
+
+  // Abort any in-flight request on unmount to prevent state updates on a dead component
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   const [completionRes, doSetCompletionRes] = useState('')
   const completionResRef = useRef('')
@@ -149,6 +172,11 @@ const Result: FC<IResultProps> = ({
       rating: null,
     })
     setCompletionRes('')
+    currentTaskIdRef.current = null
+
+    // Create a new AbortController for this request
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
     const res: string[] = []
     let tempMessageId = ''
@@ -162,11 +190,18 @@ const Result: FC<IResultProps> = ({
     (async () => {
       await sleep(1000 * 60) // 1min timeout
       if (!isEnd) {
+        abortControllerRef.current?.abort()
+        abortControllerRef.current = null
+        currentTaskIdRef.current = null
         setResponsingFalse()
         onCompleted(getCompletionRes(), taskId, false)
         isTimeout = true
       }
     })()
+
+    const handleTaskId = (id: string) => {
+      currentTaskIdRef.current = id
+    }
 
     if (isWorkflow) {
       sendWorkflowMessage(
@@ -211,6 +246,8 @@ const Result: FC<IResultProps> = ({
             if (data.error) {
               notify({ type: 'error', message: data.error })
               setResponsingFalse()
+              currentTaskIdRef.current = null
+              abortControllerRef.current = null
               onCompleted(getCompletionRes(), taskId, false)
               isEnd = true
               return
@@ -225,10 +262,14 @@ const Result: FC<IResultProps> = ({
             else
               setCompletionRes(data.outputs[Object.keys(data.outputs)[0]])
             setResponsingFalse()
+            currentTaskIdRef.current = null
+            abortControllerRef.current = null
             setMessageId(tempMessageId)
             onCompleted(getCompletionRes(), taskId, true)
             isEnd = true
           },
+          onTaskId: handleTaskId,
+          abortController,
         },
       )
     }
@@ -244,6 +285,8 @@ const Result: FC<IResultProps> = ({
             return
 
           setResponsingFalse()
+          currentTaskIdRef.current = null
+          abortControllerRef.current = null
           setMessageId(tempMessageId)
           onCompleted(getCompletionRes(), taskId, true)
           isEnd = true
@@ -253,9 +296,13 @@ const Result: FC<IResultProps> = ({
             return
 
           setResponsingFalse()
+          currentTaskIdRef.current = null
+          abortControllerRef.current = null
           onCompleted(getCompletionRes(), taskId, false)
           isEnd = true
         },
+        onTaskId: handleTaskId,
+        abortController,
       })
     }
   }
