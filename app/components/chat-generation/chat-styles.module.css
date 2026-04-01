@@ -1,0 +1,300 @@
+/* =============================================
+   CHAT GENERATION — Editorial / Magazine UI
+   Matches cool-text-generation design language.
+   ============================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+
+/* ── Layout ── */
+.chatContainer {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #2c2c2c;
+  overflow: hidden;
+}
+
+/* ── Message list area ── */
+.messageList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: #d8d2ca transparent;
+}
+.messageList::-webkit-scrollbar { width: 5px; }
+.messageList::-webkit-scrollbar-track { background: transparent; }
+.messageList::-webkit-scrollbar-thumb { background: #d8d2ca; border-radius: 4px; }
+
+/* ── Empty state ── */
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #9e9690;
+  text-align: center;
+}
+.emptyStateIcon {
+  width: 48px;
+  height: 48px;
+  color: #d4cec6;
+}
+.emptyStateTitle {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 20px;
+  color: #5a5550;
+}
+.emptyStateDesc {
+  font-size: 13px;
+  color: #9e9690;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ── Message bubbles ── */
+.messageRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.messageRowUser {
+  flex-direction: row-reverse;
+}
+.messageRowAssistant {
+  flex-direction: row;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.avatarUser {
+  background: #c8754a;
+  color: #fff;
+}
+.avatarAssistant {
+  background: #e8e3db;
+  color: #5a5550;
+  border: 1px solid #d8d2ca;
+}
+
+.bubble {
+  max-width: 72%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 14px;
+}
+.bubbleUser {
+  background: #c8754a;
+  color: #fff;
+  border-radius: 12px 2px 12px 12px;
+}
+.bubbleAssistant {
+  background: #fffefa;
+  color: #2c2c2c;
+  border: 1px solid #e8e3db;
+  border-radius: 2px 12px 12px 12px;
+}
+
+/* streaming cursor */
+.cursor::after {
+  content: '▋';
+  display: inline-block;
+  animation: blink 0.8s step-end infinite;
+  margin-left: 1px;
+  color: #c8754a;
+  font-size: 12px;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.messageTime {
+  font-size: 10px;
+  color: #b0a99f;
+  margin-top: 4px;
+  text-align: right;
+}
+.messageRowAssistant .messageTime {
+  text-align: left;
+}
+
+/* ── Agent thoughts ── */
+.agentThought {
+  background: #f6f3ee;
+  border: 1px solid #e8e3db;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #7a7570;
+}
+.agentThoughtLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #c8754a;
+  margin-bottom: 4px;
+}
+
+/* ── Suggested questions ── */
+.suggestedList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.suggestedItem {
+  background: #f6f3ee;
+  border: 1px solid #e8e3db;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #5a5550;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.suggestedItem:hover {
+  background: #c8754a;
+  border-color: #c8754a;
+  color: #fff;
+}
+
+/* ── Input area ── */
+.inputArea {
+  border-top: 1px solid #e8e3db;
+  background: #fffefa;
+  padding: 10px 40px 20px;
+  flex-shrink: 0;
+}
+
+/* ── Input toolbar (above the textarea) ── */
+.inputToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.suggestToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1.5px solid #e8e3db;
+  background: transparent;
+  color: #9e9690;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.suggestToggle:hover:not(:disabled) {
+  border-color: #c8754a;
+  color: #c8754a;
+}
+.suggestToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.suggestToggleActive {
+  border-color: #c8754a;
+  background: #fdf0e8;
+  color: #c8754a;
+}
+.inputWrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: #f6f3ee;
+  border: 1.5px solid #e8e3db;
+  border-radius: 12px;
+  padding: 10px 12px;
+  transition: border-color 0.2s;
+}
+.inputWrapper:focus-within {
+  border-color: #c8754a;
+}
+.inputTextarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: #2c2c2c;
+  line-height: 1.5;
+  max-height: 120px;
+  min-height: 22px;
+  scrollbar-width: thin;
+}
+.inputTextarea::placeholder {
+  color: #b0a99f;
+}
+.sendButton {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: #c8754a;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.sendButton:hover:not(:disabled) {
+  background: #b5633a;
+}
+.sendButton:disabled {
+  background: #d8d2ca;
+  cursor: not-allowed;
+}
+.stopButton {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1.5px solid #e8e3db;
+  background: transparent;
+  color: #7a7570;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.stopButton:hover {
+  border-color: #c8754a;
+  color: #c8754a;
+}
+
+.inputHint {
+  font-size: 11px;
+  color: #b0a99f;
+  margin-top: 6px;
+  text-align: right;
+}

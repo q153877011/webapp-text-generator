@@ -24,6 +24,7 @@ const translation = {
     csvStructureTitle: 'CSV 文件必须符合以下结构：',
     downloadTemplate: '下载模板',
     field: '',
+    stopResponding: '停止响应',
     batchFailed: {
       info: '{{num}} 次运行失败',
       retry: '重试',

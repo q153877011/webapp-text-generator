@@ -133,11 +133,11 @@ const Result: FC<IResultProps> = ({
     })
 
     if (hasEmptyInput) {
-      logError(t('appDebug.errorMessage.valueOfVarRequired', { key: hasEmptyInput }))
+      logError(t('errorMessage.valueOfVarRequired', { key: hasEmptyInput }))
       return false
     }
     if (completionFiles.find(item => item.transfer_method === TransferMethod.local_file && !item.upload_file_id)) {
-      notify({ type: 'info', message: t('appDebug.errorMessage.waitForImgUpload') })
+      notify({ type: 'info', message: t('errorMessage.waitForImgUpload') })
       return false
     }
     return !hasEmptyInput
@@ -145,7 +145,7 @@ const Result: FC<IResultProps> = ({
 
   const handleSend = async () => {
     if (isResponsing) {
-      notify({ type: 'info', message: t('appDebug.errorMessage.waitForResponse') })
+      notify({ type: 'info', message: t('errorMessage.waitForResponse') })
       return false
     }
 

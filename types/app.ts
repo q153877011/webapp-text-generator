@@ -162,3 +162,46 @@ export enum CodeLanguage {
   javascript = 'javascript',
   json = 'json',
 }
+
+// ────────────────────────────────────────────────
+// Chat / Agent types
+// ────────────────────────────────────────────────
+
+export enum MessageRole {
+  User = 'user',
+  Assistant = 'assistant',
+}
+
+export type AgentThought = {
+  id: string
+  message_id: string
+  position: number
+  thought: string
+  observation: string
+  tool: string
+  tool_input: string
+  created_at: number
+  message_files: string[]
+}
+
+export type ChatMessage = {
+  id: string
+  conversation_id: string
+  role: MessageRole
+  /** Streamed or final content */
+  content: string
+  /** True while the assistant reply is still streaming */
+  isStreaming?: boolean
+  feedback?: Feedbacktype
+  agent_thoughts?: AgentThought[]
+  created_at: number
+}
+
+export type Conversation = {
+  id: string
+  name: string
+  inputs: Record<string, any>
+  introduction: string
+  created_at: number
+  updated_at: number
+}

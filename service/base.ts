@@ -98,13 +98,17 @@ export type IOnDataMoreInfo = {
 }
 
 export type IOnData = (message: string, isFirstMessage: boolean, moreInfo: IOnDataMoreInfo) => void
-export type IOnCompleted = () => void
+export type IOnCompleted = (hasError?: boolean) => void
 export type IOnError = (msg: string) => void
 export type IOnWorkflowStarted = (workflowStarted: WorkflowStartedResponse) => void
 export type IOnWorkflowFinished = (workflowFinished: WorkflowFinishedResponse) => void
 export type IOnNodeStarted = (nodeStarted: NodeStartedResponse) => void
 export type IOnNodeFinished = (nodeFinished: NodeFinishedResponse) => void
 export type IOnTaskId = (taskId: string) => void
+// Chat / Agent specific
+export type IOnMessageEnd = (messageId: string, conversationId: string, metadata?: any) => void
+export type IOnAgentMessage = IOnData  // agent_message has the same shape as message
+export type IOnAgentThought = (thought: any) => void
 
 type IOtherOptions = {
   needAllResponseContent?: boolean
@@ -116,6 +120,10 @@ type IOtherOptions = {
   onNodeStarted?: IOnNodeStarted
   onNodeFinished?: IOnNodeFinished
   onTaskId?: IOnTaskId
+  // Chat / Agent
+  onMessageEnd?: IOnMessageEnd
+  onAgentMessage?: IOnAgentMessage
+  onAgentThought?: IOnAgentThought
   abortController?: AbortController
 }
 
@@ -134,6 +142,9 @@ const handleStream = (
   onNodeStarted?: IOnNodeStarted,
   onNodeFinished?: IOnNodeFinished,
   onTaskId?: IOnTaskId,
+  onMessageEnd?: IOnMessageEnd,
+  onAgentMessage?: IOnAgentMessage,
+  onAgentThought?: IOnAgentThought,
 ) => {
   if (!response.ok)
     throw new Error('Network response was not ok')
@@ -178,6 +189,22 @@ const handleStream = (
             })
             isFirstMessage = false
           }
+          else if (bufferObj.event === 'agent_message') {
+            // Agent streaming reply — same shape as 'message'
+            const handler = onAgentMessage || onData
+            handler(unicodeToChar(bufferObj.answer), isFirstMessage, {
+              conversationId: bufferObj.conversation_id,
+              messageId: bufferObj.id,
+            })
+            isFirstMessage = false
+          }
+          else if (bufferObj.event === 'agent_thought') {
+            onAgentThought?.(bufferObj)
+          }
+          else if (bufferObj.event === 'message_end') {
+            onMessageEnd?.(bufferObj.id, bufferObj.conversation_id, bufferObj.metadata)
+            // onCompleted is called when reader.done fires — don't call it here too
+          }
           else if (bufferObj.event === 'workflow_started') {
             onWorkflowStarted?.(bufferObj as WorkflowStartedResponse)
           }
@@ -203,6 +230,15 @@ const handleStream = (
       }
 
       read()
+    }).catch((e) => {
+      // Swallow abort errors — these are intentional (user stopped generation)
+      if (e?.name === 'AbortError' || `${e}`.includes('BodyStreamBuffer was aborted'))
+        return
+      onData('', false, {
+        conversationId: undefined,
+        messageId: '',
+        errorMessage: `${e}`,
+      })
     })
   }
   read()
@@ -247,26 +283,26 @@ const baseFetch = (url: string, fetchOptions: any, { needAllResponseContent }: I
           const resClone = res.clone()
           // Error handler
           if (!/^(2|3)\d{2}$/.test(res.status)) {
-            try {
-              const bodyJson = res.json()
-              switch (res.status) {
-                case 401: {
-                  Toast.notify({ type: 'error', message: 'Invalid token' })
-                  return
+            if (res.status === 401) {
+              Toast.notify({ type: 'error', message: 'Invalid token' })
+              return Promise.reject(resClone)
+            }
+            // Safely read the body — it may be empty (e.g. some 4xx/5xx responses)
+            res.text().then((text: string) => {
+              let message = `Request failed (${res.status})`
+              if (text) {
+                try {
+                  const data = JSON.parse(text)
+                  if (data?.message) message = data.message
                 }
-                default:
-                  // eslint-disable-next-line no-new
-                  new Promise(() => {
-                    bodyJson.then((data: any) => {
-                      Toast.notify({ type: 'error', message: data.message })
-                    })
-                  })
+                catch {
+                  message = text
+                }
               }
-            }
-            catch (e) {
-              Toast.notify({ type: 'error', message: `${e}` })
-            }
-
+              Toast.notify({ type: 'error', message })
+            }).catch(() => {
+              Toast.notify({ type: 'error', message: `Request failed (${res.status})` })
+            })
             return Promise.reject(resClone)
           }
 
@@ -333,6 +369,9 @@ export const ssePost = (
     onNodeStarted,
     onNodeFinished,
     onTaskId,
+    onMessageEnd,
+    onAgentMessage,
+    onAgentThought,
     abortController,
   }: IOtherOptions) => {
   const options = Object.assign({}, baseOptions, {
@@ -352,13 +391,24 @@ export const ssePost = (
   globalThis.fetch(urlWithPrefix, options)
     .then((res: any) => {
       if (!/^(2|3)\d{2}$/.test(res.status)) {
-        // eslint-disable-next-line no-new
-        new Promise(() => {
-          res.json().then((data: any) => {
-            Toast.notify({ type: 'error', message: data.message || 'Server Error' })
-          })
+        res.text().then((text: string) => {
+          let message = `Server Error (${res.status})`
+          if (text) {
+            try {
+              const data = JSON.parse(text)
+              if (data?.message) message = data.message
+            }
+            catch {
+              message = text
+            }
+          }
+          Toast.notify({ type: 'error', message })
+          onError?.(message)
+        }).catch(() => {
+          const message = `Server Error (${res.status})`
+          Toast.notify({ type: 'error', message })
+          onError?.(message)
         })
-        onError?.('Server Error')
         return
       }
       return handleStream(res, (str: string, isFirstMessage: boolean, moreInfo: IOnDataMoreInfo) => {
@@ -367,7 +417,8 @@ export const ssePost = (
           return
         }
         onData?.(str, isFirstMessage, moreInfo)
-      }, onCompleted, onWorkflowStarted, onWorkflowFinished, onNodeStarted, onNodeFinished, onTaskId)
+      }, onCompleted, onWorkflowStarted, onWorkflowFinished, onNodeStarted, onNodeFinished, onTaskId,
+        onMessageEnd, onAgentMessage, onAgentThought)
     }).catch((e) => {
       if (e?.name === 'AbortError') {
         // Request was intentionally aborted (user stopped generation).

@@ -339,7 +339,6 @@ const CoolTextGeneration = () => {
     })
     setAllTaskList(allTaskList)
     setControlSend(Date.now())
-    setControlStopResponding(Date.now())
     showResSidebar()
   }
 

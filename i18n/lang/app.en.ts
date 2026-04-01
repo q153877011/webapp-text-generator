@@ -24,6 +24,7 @@ const translation = {
     csvStructureTitle: 'The CSV file must conform to the following structure:',
     downloadTemplate: 'Download the template here',
     field: 'Field',
+    stopResponding: 'Stop',
     batchFailed: {
       info: '{{num}} failed executions',
       retry: 'Retry',
