@@ -8,6 +8,11 @@ import {
   StopIcon,
   ChatBubbleOvalLeftEllipsisIcon,
   SparklesIcon,
+  MicrophoneIcon,
+  SpeakerWaveIcon,
+  PaperClipIcon,
+  DocumentIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/solid'
 import ReactMarkdown from 'react-markdown'
 import Toast from '@/app/components/base/toast'
@@ -18,10 +23,15 @@ import {
   fetchSuggestedQuestions,
   fetchMessages,
   fetchAppParams,
+  audioToText,
+  textToAudio,
+  uploadFile,
 } from '@/service'
-import type { ChatMessage } from '@/types/app'
-import { MessageRole } from '@/types/app'
-import { APP_TYPE } from '@/config'
+import { v4 as uuidv4 } from 'uuid'
+import { stripMarkdown, toDifyMessageId } from './utils'
+import type { ChatMessage, AttachedFile } from '@/types/app'
+import { MessageRole, TransferMethod } from '@/types/app'
+import type { AppTypeValue } from '@/config'
 import s from './chat-styles.module.css'
 
 // ─── Types ────────────────────────────────────────────────────────────
@@ -29,21 +39,41 @@ import s from './chat-styles.module.css'
 type Props = {
   /** Active conversation ID (managed by parent / ConversationSidebar) */
   conversationId: string | null
+  /** App type passed from parent (runtime-detected) */
+  appType?: AppTypeValue
+  /** Raw /v1/parameters response forwarded from AppEntry — avoids a second fetch */
+  appParams?: any
   /** Called when first assistant reply arrives with new conversation ID */
   onConversationCreated?: (id: string) => void
   /** Called whenever messages change (e.g. to refresh sidebar) */
   onMessagesChange?: () => void
 }
 
+// Accepted file MIME types / extensions
+const ACCEPTED_FILE_TYPES = [
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/markdown',
+  'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+].join(',')
+
+const MAX_FILES = 5
+
 // ─── Component ────────────────────────────────────────────────────────
 
 const ChatGeneration: React.FC<Props> = ({
   conversationId,
+  appType,
+  appParams,
   onConversationCreated,
   onMessagesChange,
 }) => {
   const { t } = useTranslation()
-  const isAgentApp = APP_TYPE === 'agent'
+  const isAgentApp = appType === 'agent'
+
+  // ── App capability flags (derived from appParams passed by parent) ──
+  const ttsEnabled = appParams?.text_to_speech?.enabled === true
+  const sttEnabled = appParams?.speech_to_text?.enabled === true
 
   // Messages state
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -58,6 +88,32 @@ const ChatGeneration: React.FC<Props> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messageCountRef = useRef<number>(0)
   const currentTaskIdRef = useRef<string | null>(null)
+
+  // ── STT state ──────────────────────────────────────────────────────
+  type SttPhase = 'idle' | 'recording' | 'transcribing'
+  const [sttPhase, setSttPhase] = useState<SttPhase>('idle')
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+
+  // ── TTS state ──────────────────────────────────────────────────────
+  type TtsState =
+    | { status: 'idle' }
+    | { status: 'loading'; id: string }
+    | { status: 'playing'; id: string }
+  const [ttsState, setTtsState] = useState<TtsState>({ status: 'idle' })
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioBlobUrlRef = useRef<string | null>(null)
+
+  // ── File attachment state ──────────────────────────────────────────
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
+  const attachedFilesRef = useRef<AttachedFile[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Keep ref in sync so handleSend doesn't need attachedFiles in its deps
+  useEffect(() => {
+    attachedFilesRef.current = attachedFiles
+  }, [attachedFiles])
 
   // ── Scroll to bottom ───────────────────────────────────────────────
   const scrollToBottom = useCallback(() => {
@@ -74,6 +130,23 @@ const ChatGeneration: React.FC<Props> = ({
     }
   }, [messages.length, scrollToBottom])
 
+  // ── Cleanup audio + recording on unmount ──────────────────────────
+  useEffect(() => {
+    return () => {
+      // Stop any active recording and release the mic
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive')
+        mediaRecorderRef.current.stop()
+      if (audioBlobUrlRef.current)
+        URL.revokeObjectURL(audioBlobUrlRef.current)
+      audioRef.current?.pause()
+      // Revoke any leftover file preview URLs
+      attachedFilesRef.current.forEach(f => {
+        if (f.previewUrl)
+          URL.revokeObjectURL(f.previewUrl)
+      })
+    }
+  }, [])
+
   // ── Reset when switching conversation ──────────────────────────────
   useEffect(() => {
     // Abort any in-flight request from the previous conversation
@@ -86,6 +159,10 @@ const ChatGeneration: React.FC<Props> = ({
     stopResponding()
     messageCountRef.current = 0
 
+    // Stop any TTS on conversation switch
+    audioRef.current?.pause()
+    setTtsState({ status: 'idle' })
+
     if (!conversationId) return
 
     const loadConversationHistory = async () => {
@@ -93,7 +170,7 @@ const ChatGeneration: React.FC<Props> = ({
       try {
         const res: any = await fetchMessages(conversationId)
         if (res?.code) {
-          Toast.notify({ type: 'error', message: res.message || 'Failed to load conversation history' })
+          Toast.notify({ type: 'error', message: res.message || t('app.chat.historyLoadFailed') })
           return
         }
 
@@ -132,7 +209,7 @@ const ChatGeneration: React.FC<Props> = ({
         }
       }
       catch (e: any) {
-        Toast.notify({ type: 'error', message: e.message || 'Failed to load conversation history' })
+        Toast.notify({ type: 'error', message: e.message || t('app.chat.historyLoadFailed') })
       }
       finally {
         setLoadingHistory(false)
@@ -154,21 +231,24 @@ const ChatGeneration: React.FC<Props> = ({
 
     setSuggestChecking(true)
     try {
-      const paramsRes: any = await fetchAppParams()
-      if (paramsRes?.data?.suggested_questions_after_answer?.enabled) {
+      // Use params forwarded from parent to avoid a redundant fetch
+      const enabled = appParams?.suggested_questions_after_answer?.enabled
+        // If parent params not yet available, fall back to a one-time fetch
+        ?? await fetchAppParams().then((res: any) => res?.data?.suggested_questions_after_answer?.enabled).catch(() => false)
+      if (enabled) {
         setSuggestEnabled(true)
       }
       else {
-        Toast.notify({ type: 'error', message: 'Suggested Questions is not enabled in your Dify app settings.' })
+        Toast.notify({ type: 'error', message: t('app.chat.suggestionsNotEnabled') })
       }
     }
     catch {
-      Toast.notify({ type: 'error', message: 'Could not verify Suggested Questions setting.' })
+      Toast.notify({ type: 'error', message: t('app.chat.suggestionsCheckFailed') })
     }
     finally {
       setSuggestChecking(false)
     }
-  }, [suggestEnabled])
+  }, [suggestEnabled, appParams])
 
   // ── Textarea auto-resize ───────────────────────────────────────────
   const handleTextareaChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -176,6 +256,204 @@ const ChatGeneration: React.FC<Props> = ({
     e.target.style.height = 'auto'
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
   }, [])
+
+  // ── STT: microphone recording ──────────────────────────────────────
+  const handleMicClick = useCallback(async () => {
+    if (sttPhase === 'transcribing') return
+
+    if (sttPhase === 'recording') {
+      // Stop recording — this triggers ondataavailable + onstop
+      mediaRecorderRef.current?.stop()
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioChunksRef.current = []
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'
+      const recorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = recorder
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0)
+          audioChunksRef.current.push(e.data)
+      }
+
+      recorder.onstop = async () => {
+        // Stop all tracks to release mic indicator
+        stream.getTracks().forEach(t => t.stop())
+        setSttPhase('transcribing')
+        try {
+          const blob = new Blob(audioChunksRef.current, { type: mimeType })
+          const text = await audioToText(blob)
+          if (text)
+            setInputValue(prev => prev ? `${prev} ${text}` : text)
+          else
+            Toast.notify({ type: 'info', message: t('app.chat.noSpeechDetected') })
+        }
+        catch {
+          Toast.notify({ type: 'error', message: t('app.chat.transcriptionFailed') })
+        }
+        finally {
+          setSttPhase('idle')
+        }
+      }
+
+      recorder.start()
+      setSttPhase('recording')
+    }
+    catch (err: any) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError')
+        Toast.notify({ type: 'error', message: t('app.chat.micDenied') })
+      else
+        Toast.notify({ type: 'error', message: t('app.chat.micFailed') })
+    }
+  }, [sttPhase])
+
+  // ── TTS: text-to-speech playback ───────────────────────────────────
+  const handleSpeak = useCallback(async (msg: ChatMessage) => {
+    if (!msg.content) return
+
+    // If already speaking this message → stop
+    if (ttsState.status === 'playing' && ttsState.id === msg.id) {
+      audioRef.current?.pause()
+      setTtsState({ status: 'idle' })
+      return
+    }
+
+    // Stop any current playback
+    audioRef.current?.pause()
+    if (audioBlobUrlRef.current) {
+      URL.revokeObjectURL(audioBlobUrlRef.current)
+      audioBlobUrlRef.current = null
+    }
+    setTtsState({ status: 'loading', id: msg.id })
+
+    try {
+      // Strip markdown so TTS doesn't speak raw syntax characters
+      const plainText = stripMarkdown(msg.content)
+
+      if (!plainText) return
+
+      // Only pass message_id if it's a real Dify UUID (not a local placeholder)
+      const messageId = toDifyMessageId(msg.id)
+
+      const blob = await textToAudio(plainText, messageId)
+      const url = URL.createObjectURL(blob)
+      audioBlobUrlRef.current = url
+
+      const audio = new Audio(url)
+      audioRef.current = audio
+
+      audio.onended = () => {
+        // Guard against double-revoke: only revoke if this URL is still current
+        if (audioBlobUrlRef.current === url) {
+          URL.revokeObjectURL(url)
+          audioBlobUrlRef.current = null
+        }
+        setTtsState({ status: 'idle' })
+      }
+      audio.onerror = () => {
+        setTtsState({ status: 'idle' })
+        Toast.notify({ type: 'error', message: t('app.chat.ttsPlaybackFailed') })
+      }
+
+      setTtsState({ status: 'playing', id: msg.id })
+      audio.play()
+    }
+    catch (err: any) {
+      Toast.notify({ type: 'error', message: err?.message || t('app.chat.ttsFailed') })
+    }
+    finally {
+      setTtsState(prev => prev.status === 'loading' ? { status: 'idle' } : prev)
+    }
+  }, [ttsState])
+
+  // ── File attachment: process selected files ────────────────────────
+  const processFiles = useCallback((rawFiles: File[]) => {
+    const remaining = MAX_FILES - attachedFilesRef.current.length
+    if (remaining <= 0) {
+      Toast.notify({ type: 'error', message: t('app.chat.maxFilesExceeded', { max: MAX_FILES }) })
+      return
+    }
+
+    const toAdd = rawFiles.slice(0, remaining)
+
+    // Build all entries first, then do a single state update
+    const newEntries: AttachedFile[] = toAdd.map((file) => {
+      const isImage = file.type.startsWith('image/')
+      return {
+        _id: uuidv4(),
+        file,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        uploadFileId: '',
+        progress: 0,
+        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+      }
+    })
+
+    setAttachedFiles(prev => [...prev, ...newEntries])
+
+    // Trigger uploads separately after state is queued
+    newEntries.forEach((entry) => {
+      uploadFile(
+        entry.file,
+        (progress) => {
+          setAttachedFiles(prev =>
+            prev.map(f => f._id === entry._id ? { ...f, progress } : f),
+          )
+        },
+        (fileId) => {
+          setAttachedFiles(prev =>
+            prev.map(f => f._id === entry._id ? { ...f, uploadFileId: fileId, progress: 100 } : f),
+          )
+        },
+        () => {
+          setAttachedFiles(prev =>
+            prev.map(f => f._id === entry._id ? { ...f, progress: -1 } : f),
+          )
+          Toast.notify({ type: 'error', message: t('app.chat.fileUploadFailed', { name: entry.name }) })
+        },
+      )
+    })
+  }, [])
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length) processFiles(files)
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = ''
+  }, [processFiles])
+
+  const handleRemoveFile = useCallback((_id: string) => {
+    setAttachedFiles(prev => {
+      const target = prev.find(f => f._id === _id)
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter(f => f._id !== _id)
+    })
+  }, [])
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (!isDragOver)
+      setIsDragOver(true)
+  }, [isDragOver])
+
+  const handleDragLeave = useCallback(() => {
+    if (isDragOver)
+      setIsDragOver(false)
+  }, [isDragOver])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length) processFiles(files)
+  }, [processFiles])
 
   // ── Send message ───────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -187,28 +465,44 @@ const ChatGeneration: React.FC<Props> = ({
       textareaRef.current.style.height = 'auto'
     setSuggestedQuestions([])
 
-    // Optimistically append user message
+    // Read from ref so this callback doesn't need attachedFiles in its deps
+    const currentFiles = attachedFilesRef.current
+
+    // Build Dify files payload from uploaded attachments
+    const files = currentFiles
+      .filter(f => f.uploadFileId && f.progress === 100)
+      .map(f => ({
+        type: f.mimeType.startsWith('image/') ? 'image' : 'document',
+        transfer_method: TransferMethod.local_file,
+        upload_file_id: f.uploadFileId,
+      }))
+
+    // Revoke preview object URLs before clearing to avoid memory leak
+    currentFiles.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl) })
+    setAttachedFiles([])
+
+    // Batch both optimistic messages into a single setState call
+    const placeholderId = `assistant-${Date.now()}`
+    const now = Math.floor(Date.now() / 1000)
     setMessages(prev => [
       ...prev,
       {
         id: `user-${Date.now()}`,
+        conversation_id: conversationId || '',
         role: MessageRole.User,
         content: query,
         isStreaming: false,
         agent_thoughts: [],
+        created_at: now,
       } as ChatMessage,
-    ])
-
-    // Append empty streaming assistant placeholder
-    const placeholderId = `assistant-${Date.now()}`
-    setMessages(prev => [
-      ...prev,
       {
         id: placeholderId,
+        conversation_id: conversationId || '',
         role: MessageRole.Assistant,
         content: '',
         isStreaming: true,
         agent_thoughts: [],
+        created_at: now,
       } as ChatMessage,
     ])
 
@@ -221,48 +515,35 @@ const ChatGeneration: React.FC<Props> = ({
     let resolvedMsgId = placeholderId
     let resolvedConvId = conversationId
 
+    // Shared handler for both onData (chat) and onAgentMessage (agent app)
+    const handleStreamChunk = (text: string, _isFirst: boolean, { conversationId: cid, messageId }: { conversationId?: string; messageId?: string }) => {
+      if (cid && !resolvedConvId) {
+        resolvedConvId = cid
+        onConversationCreated?.(cid)
+      }
+      if (messageId)
+        resolvedMsgId = messageId
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === placeholderId || m.id === resolvedMsgId
+            ? { ...m, id: resolvedMsgId, content: m.content + text, isStreaming: true }
+            : m,
+        ),
+      )
+      scrollToBottom()
+    }
+
     await sendChatMessage(
       {
         query,
         inputs: {},
         conversation_id: conversationId || undefined,
+        ...(files.length > 0 ? { files } : {}),
       },
       {
-        onData: (text, _isFirst, { conversationId: cid, messageId }) => {
-          if (cid && !resolvedConvId) {
-            resolvedConvId = cid
-            onConversationCreated?.(cid)
-          }
-          if (messageId)
-            resolvedMsgId = messageId
-
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === placeholderId || m.id === resolvedMsgId
-                ? { ...m, id: resolvedMsgId, content: m.content + text, isStreaming: true }
-                : m,
-            ),
-          )
-          scrollToBottom()
-        },
-
-        onAgentMessage: (text, _isFirst, { conversationId: cid, messageId }) => {
-          if (cid && !resolvedConvId) {
-            resolvedConvId = cid
-            onConversationCreated?.(cid)
-          }
-          if (messageId)
-            resolvedMsgId = messageId
-
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === placeholderId || m.id === resolvedMsgId
-                ? { ...m, id: resolvedMsgId, content: m.content + text, isStreaming: true }
-                : m,
-            ),
-          )
-          scrollToBottom()
-        },
+        onData: handleStreamChunk,
+        onAgentMessage: handleStreamChunk,
 
         onAgentThought: (thought) => {
           setMessages(prev =>
@@ -369,9 +650,9 @@ const ChatGeneration: React.FC<Props> = ({
         {!loadingHistory && messages.length === 0 && (
           <div className={s.emptyState}>
             <ChatBubbleOvalLeftEllipsisIcon className={s.emptyStateIcon} />
-            <div className={s.emptyStateTitle}>Start a conversation</div>
+            <div className={s.emptyStateTitle}>{t('app.chat.emptyTitle')}</div>
             <div className={s.emptyStateDesc}>
-              Ask anything — your assistant is ready to help.
+              {t('app.chat.emptyDesc')}
             </div>
           </div>
         )}
@@ -396,7 +677,7 @@ const ChatGeneration: React.FC<Props> = ({
                 <div className="mb-2 space-y-1">
                   {msg.agent_thoughts.map((thought: any) => (
                     <div key={thought.id} className={s.agentThought}>
-                      <div className={s.agentThoughtLabel}>Thinking</div>
+                      <div className={s.agentThoughtLabel}>{t('app.chat.thinkingLabel')}</div>
                       <div>{thought.thought}</div>
                       {thought.tool && (
                         <div className="mt-1 text-xs">
@@ -425,6 +706,27 @@ const ChatGeneration: React.FC<Props> = ({
                   )
                   : msg.content}
               </div>
+
+              {/* TTS speak button — only for completed assistant messages when TTS is enabled */}
+              {ttsEnabled && msg.role === MessageRole.Assistant && !msg.isStreaming && msg.content && (
+                <button
+                  className={cn(s.speakButton, ttsState.status === 'playing' && ttsState.id === msg.id && s.speakButtonActive)}
+                  onClick={() => handleSpeak(msg)}
+                  disabled={ttsState.status === 'loading' && ttsState.id === msg.id}
+                  title={ttsState.status === 'playing' && ttsState.id === msg.id ? t('app.chat.stopSpeakingTitle') as string : t('app.chat.readAloudTitle') as string}
+                >
+                  {ttsState.status === 'loading' && ttsState.id === msg.id
+                    ? (
+                      <span className={s.loadingEllipsis}>…</span>
+                    )
+                    : (
+                      <>
+                        <SpeakerWaveIcon className="w-3 h-3" />
+                        <span>{ttsState.status === 'playing' && ttsState.id === msg.id ? t('app.chat.stopSpeakingBtn') : t('app.chat.listenBtn')}</span>
+                      </>
+                    )}
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -450,37 +752,127 @@ const ChatGeneration: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_FILE_TYPES}
+        style={{ display: 'none' }}
+        onChange={handleFileInputChange}
+      />
+
       {/* Input area */}
-      <div className={s.inputArea}>
+      <div
+        className={s.inputArea}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {/* Toolbar */}
         <div className={s.inputToolbar}>
           <button
             className={cn(s.suggestToggle, suggestEnabled && s.suggestToggleActive)}
             onClick={handleSuggestToggle}
             disabled={suggestChecking}
-            title={suggestEnabled ? 'Disable suggested questions' : 'Enable suggested questions'}
+            title={suggestEnabled ? t('app.chat.suggestionsDisableTitle') as string : t('app.chat.suggestionsEnableTitle') as string}
           >
             <SparklesIcon className="w-3.5 h-3.5" />
-            <span>Suggestions</span>
+            <span>{t('app.chat.suggestions')}</span>
           </button>
         </div>
 
-        <div className={s.inputWrapper}>
+        {/* File preview area */}
+        {attachedFiles.length > 0 && (
+          <div className={s.filePreviewArea}>
+            <div className={s.filePreviewList}>
+              {attachedFiles.map(f => (
+                <div
+                  key={f._id}
+                  className={cn(s.filePreviewItem, f.progress === -1 && s.filePreviewItemError)}
+                  title={f.name}
+                >
+                  {/* Thumbnail or icon */}
+                  {f.previewUrl
+                    ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={f.previewUrl} alt={f.name} className={s.filePreviewThumb} />
+                    )
+                    : (
+                      <div className={s.filePreviewIcon}>
+                        <DocumentIcon className="w-4 h-4" />
+                      </div>
+                    )}
+
+                  {/* File name */}
+                  <div className={s.filePreviewName}>{f.name}</div>
+
+                  {/* Progress bar */}
+                  {f.progress >= 0 && f.progress < 100 && (
+                    <div
+                      className={s.fileProgressBar}
+                      style={{ width: `${f.progress}%` }}
+                    />
+                  )}
+                  {f.progress === -1 && (
+                    <div className={cn(s.fileProgressBar, s.fileProgressBarError)} />
+                  )}
+
+                  {/* Remove button */}
+                  <button
+                    className={s.fileRemoveBtn}
+                    onClick={() => handleRemoveFile(f._id)}
+                    title={t('app.chat.removeFileTitle') as string}
+                  >
+                    <XMarkIcon className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className={cn(s.inputWrapper, isDragOver && s.inputWrapperDragOver)}>
+          {/* Attach button */}
+          <button
+            className={s.attachButton}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isResponding || attachedFiles.length >= MAX_FILES}
+            title={t('app.chat.attachTitle') as string}
+          >
+            <PaperClipIcon className="w-4 h-4" />
+          </button>
+
           <textarea
             ref={textareaRef}
             className={s.inputTextarea}
-            placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+            placeholder={t('app.chat.inputPlaceholder') as string}
             value={inputValue}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             rows={1}
             disabled={isResponding}
           />
+
+          {/* Mic button — only shown when STT is enabled */}
+          {sttEnabled && (
+          <button
+            className={cn(s.micButton, sttPhase === 'recording' && s.micButtonActive)}
+            onClick={handleMicClick}
+            disabled={sttPhase === 'transcribing' || isResponding}
+            title={sttPhase === 'recording' ? t('app.chat.stopRecordTitle') as string : sttPhase === 'transcribing' ? t('app.chat.transcribingPlaceholder') as string : t('app.chat.recordTitle') as string}
+          >
+            {sttPhase === 'transcribing'
+              ? <span className={s.loadingEllipsis}>…</span>
+              : <MicrophoneIcon className="w-4 h-4" />}
+          </button>
+          )}
+
           {isResponding
             ? (
               <button className={s.stopButton} onClick={handleStop}>
                 <StopIcon className="w-3.5 h-3.5" />
-                <span>Stop</span>
+                <span>{t('app.chat.stopBtn')}</span>
               </button>
             )
             : (
@@ -495,9 +887,7 @@ const ChatGeneration: React.FC<Props> = ({
             )}
         </div>
 
-        <div className={s.inputHint}>
-          <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
-        </div>
+        <div className={s.inputHint}>{t('app.chat.inputHint')}</div>
       </div>
     </div>
   )
