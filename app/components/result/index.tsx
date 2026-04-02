@@ -5,7 +5,6 @@ import { useBoolean } from 'ahooks'
 import { t } from 'i18next'
 import produce from 'immer'
 import cn from 'classnames'
-import NoData from '../no-data'
 import TextGenerationRes from './item'
 import Toast from '@/app/components/base/toast'
 import { sendCompletionMessage, sendWorkflowMessage, stopCompletionMessage, stopWorkflow, updateFeedback } from '@/service'
@@ -345,10 +344,7 @@ const Result: FC<IResultProps> = ({
             </div>)
           : (
             <>
-              {(isNoData && !workflowProcessData)
-                ? <NoData />
-                : renderTextGenerationRes()
-              }
+              {!isNoData || workflowProcessData ? renderTextGenerationRes() : null}
             </>
           )
       )}

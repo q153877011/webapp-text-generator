@@ -45,8 +45,7 @@ export type UserInputFormItem = {
   'select': SelectTypeFormItem
 }
 
-export const MessageRatings = ['like', 'dislike', null] as const
-export type MessageRating = typeof MessageRatings[number]
+export type MessageRating = 'like' | 'dislike' | null
 
 export type Feedbacktype = {
   rating: MessageRating

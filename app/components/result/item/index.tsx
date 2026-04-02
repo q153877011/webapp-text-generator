@@ -1,17 +1,15 @@
 'use client'
 import type { FC } from 'react'
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { useTranslation } from 'react-i18next'
 import cn from 'classnames'
 import copy from 'copy-to-clipboard'
 import { HandThumbDownIcon, HandThumbUpIcon } from '@heroicons/react/24/outline'
-import { useBoolean } from 'ahooks'
 import { HashtagIcon } from '@heroicons/react/24/solid'
 import { Markdown } from '@/app/components/base/markdown'
 import Loading from '@/app/components/base/loading'
 import Toast from '@/app/components/base/toast'
 import type { Feedbacktype, WorkflowProcess } from '@/types/app'
-import { updateFeedback } from '@/service'
 import Clipboard from '@/app/components/base/icons/line/clipboard'
 import RefreshCcw01 from '@/app/components/base/icons/line/refresh-ccw-01'
 import CodeEditor from '@/app/components/result/workflow/code-editor'
@@ -74,51 +72,11 @@ const GenerationItem: FC<IGenerationItemProps> = ({
   const { t } = useTranslation()
   const isTop = depth === 1
 
-  const [completionRes, setCompletionRes] = useState('')
-  const [childMessageId, setChildMessageId] = useState<string | null>(null)
-  const hasChild = !!childMessageId
-  const [childFeedback, setChildFeedback] = useState<Feedbacktype>({
-    rating: null,
-  })
-
-  const handleFeedback = async (childFeedback: Feedbacktype) => {
-    await updateFeedback({ url: `/messages/${childMessageId}/feedbacks`, body: { rating: childFeedback.rating } })
-    setChildFeedback(childFeedback)
-  }
-
-  const [isQuerying, { setTrue: startQuerying, setFalse: stopQuerying }] = useBoolean(false)
-
-  const childProps = {
-    isInWebApp: true,
-    content: completionRes,
-    messageId: childMessageId,
-    depth: depth + 1,
-    moreLikeThis: true,
-    onFeedback: handleFeedback,
-    isLoading: isQuerying,
-    feedback: childFeedback,
-    isMobile,
-    isWorkflow,
-  }
-
-  const mainStyle = (() => {
-    const res: React.CSSProperties = !isTop
-      ? {
-        background: depth % 2 === 0 ? 'linear-gradient(90.07deg, #F9FAFB 0.05%, rgba(249, 250, 251, 0) 99.93%)' : '#fff',
-      }
-      : {}
-
-    if (hasChild)
-      res.boxShadow = '0px 1px 2px rgba(16, 24, 40, 0.05)'
-
-    return res
-  })()
-
-  // regeneration clear child
-  useEffect(() => {
-    if (isLoading)
-      setChildMessageId(null)
-  }, [isLoading])
+  const mainStyle: React.CSSProperties = !isTop
+    ? {
+      background: depth % 2 === 0 ? 'linear-gradient(90.07deg, #F9FAFB 0.05%, rgba(249, 250, 251, 0) 99.93%)' : '#fff',
+    }
+    : {}
 
   return (
     <div className={cn(className, isTop ? `rounded-xl border ${!isError ? 'border-gray-200 bg-white' : 'border-[#FECDCA] bg-[#FEF3F2]'} ` : 'rounded-br-xl !mt-0')}
@@ -245,12 +203,6 @@ const GenerationItem: FC<IGenerationItemProps> = ({
 
           </div>
         )}
-
-      {((childMessageId || isQuerying) && depth < 3) && (
-        <div className='pl-4'>
-          <GenerationItem {...childProps as any} />
-        </div>
-      )}
 
     </div>
   )

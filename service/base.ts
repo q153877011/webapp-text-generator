@@ -128,7 +128,7 @@ type IOtherOptions = {
 }
 
 function unicodeToChar(text: string) {
-  return text.replace(/\\u[0-9a-f]{4}/g, (_match, p1) => {
+  return text.replace(/\\u([0-9a-f]{4})/g, (_match, p1) => {
     return String.fromCharCode(parseInt(p1, 16))
   })
 }
@@ -171,10 +171,8 @@ const handleStream = (
             bufferObj = JSON.parse(message.substring(6)) // remove data: and parse as json
           }
           catch (e) {
-            onData('', isFirstMessage, {
-              conversationId: bufferObj?.conversation_id,
-              messageId: bufferObj?.id,
-            })
+            // Incomplete / malformed SSE chunk — skip it silently.
+            // Do NOT forward stale bufferObj IDs from the previous chunk.
             return
           }
           // Report task_id on first occurrence
@@ -258,7 +256,7 @@ const baseFetch = (url: string, fetchOptions: any, { needAllResponseContent }: I
     Object.keys(params).forEach(key =>
       paramsArray.push(`${key}=${encodeURIComponent(params[key])}`),
     )
-    if (urlWithPrefix.search(/\?/) === -1)
+    if (!urlWithPrefix.includes('?'))
       urlWithPrefix += `?${paramsArray.join('&')}`
 
     else
@@ -440,10 +438,6 @@ export const get = (url: string, options = {}, otherOptions?: IOtherOptions) => 
 
 export const post = (url: string, options = {}, otherOptions?: IOtherOptions) => {
   return request(url, Object.assign({}, options, { method: 'POST' }), otherOptions)
-}
-
-export const put = (url: string, options = {}, otherOptions?: IOtherOptions) => {
-  return request(url, Object.assign({}, options, { method: 'PUT' }), otherOptions)
 }
 
 export const del = (url: string, options = {}, otherOptions?: IOtherOptions) => {

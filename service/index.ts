@@ -1,6 +1,7 @@
 import type { IOnCompleted, IOnData, IOnError, IOnNodeFinished, IOnNodeStarted, IOnTaskId, IOnWorkflowFinished, IOnWorkflowStarted, IOnMessageEnd, IOnAgentMessage, IOnAgentThought } from './base'
-import { get, post, del, ssePost } from './base'
+import { get, post, del, ssePost, upload } from './base'
 import type { Feedbacktype } from '@/types/app'
+import { API_PREFIX } from '@/config'
 
 export const sendCompletionMessage = async (
   body: Record<string, any>,
@@ -157,3 +158,78 @@ export const renameConversation = async (
   })
 }
 
+// ────────────────────────────────────────────────
+// Multimodal: STT / TTS / File Upload
+// ────────────────────────────────────────────────
+
+/**
+ * Send an audio blob to Dify's speech-to-text endpoint and return the
+ * transcribed text string.
+ */
+export const audioToText = async (blob: Blob): Promise<string> => {
+  const formData = new FormData()
+  formData.append('file', blob, 'recording.webm')
+  const res: any = await globalThis.fetch(`${API_PREFIX}/audio-to-text`, {
+    method: 'POST',
+    body: formData,
+    credentials: 'include',
+  }).then(r => r.json())
+  return res.text ?? ''
+}
+
+/**
+ * Convert text to speech via Dify and return an audio Blob.
+ * @param text       The text to synthesise.
+ * @param messageId  Optional Dify message ID for voice cloning / consistency.
+ */
+export const textToAudio = async (text: string, messageId?: string): Promise<Blob> => {
+  const res = await globalThis.fetch(`${API_PREFIX}/text-to-audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ text, message_id: messageId }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: `TTS request failed (${res.status})` }))
+    throw new Error(err.message || `TTS request failed (${res.status})`)
+  }
+  return res.blob()
+}
+
+/**
+ * Upload a generic file (image or document) to Dify's file-upload endpoint.
+ * Progress is reported via `onProgressCallback` (0–100).
+ * @returns Promise resolving to the Dify upload_file_id string.
+ */
+export const uploadFile = (
+  file: File,
+  onProgressCallback: (progress: number) => void,
+  onSuccessCallback: (fileId: string) => void,
+  onErrorCallback: () => void,
+) => {
+  const xhr = new XMLHttpRequest()
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('type', file.type.startsWith('image/') ? 'image' : 'document')
+
+  upload({
+    xhr,
+    url: `${API_PREFIX}/file-upload`,
+    data: formData,
+    headers: {},
+    onprogress: (e: ProgressEvent) => {
+      if (e.lengthComputable)
+        onProgressCallback(Math.round((e.loaded / e.total) * 100))
+    },
+  }).then((res: any) => {
+    // upload() resolves with { id: xhr.response } where xhr.response is the
+    // raw file ID string returned by /api/file-upload (just a UUID, not JSON).
+    const fileId: string = res.id ?? ''
+    if (fileId)
+      onSuccessCallback(fileId)
+    else
+      onErrorCallback()
+  }).catch(() => {
+    onErrorCallback()
+  })
+}
