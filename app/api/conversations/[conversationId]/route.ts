@@ -20,7 +20,7 @@ export async function DELETE(
   const { user } = getInfo(request)
   try {
     const res = await chatClient.deleteConversation(conversationId, user)
-    return NextResponse.json(res)
+    return NextResponse.json(res.data ?? { result: 'success' })
   }
   catch (e: any) {
     const status = e?.response?.status ?? 500

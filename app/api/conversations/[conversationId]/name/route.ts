@@ -31,7 +31,7 @@ export async function POST(
       user,
       auto_generate,
     )
-    return NextResponse.json(res)
+    return NextResponse.json(res.data ?? res)
   }
   catch (e: any) {
     const status = e?.response?.status ?? 500
