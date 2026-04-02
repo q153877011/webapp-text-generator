@@ -81,6 +81,10 @@ export const fetchAppMeta = async () => {
   return get('meta')
 }
 
+export const fetchMessages = async (conversationId: string) => {
+  return get('messages', { params: { conversation_id: conversationId } })
+}
+
 export const updateFeedback = async ({ url, body }: { url: string; body: Feedbacktype }) => {
   return post(url, { body })
 }

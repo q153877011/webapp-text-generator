@@ -11,33 +11,31 @@ import {
 } from '@heroicons/react/24/solid'
 import ReactMarkdown from 'react-markdown'
 import Toast from '@/app/components/base/toast'
+import Loading from '@/app/components/base/loading'
 import {
   sendChatMessage,
   stopChatMessage,
   fetchSuggestedQuestions,
+  fetchMessages,
+  fetchAppParams,
 } from '@/service'
-import type { ChatMessage, AgentThought } from '@/types/app'
+import type { ChatMessage } from '@/types/app'
 import { MessageRole } from '@/types/app'
 import { APP_TYPE } from '@/config'
 import s from './chat-styles.module.css'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────
 
 type Props = {
   /** Active conversation ID (managed by parent / ConversationSidebar) */
   conversationId: string | null
-  /** Called when the first assistant reply arrives with the new conversation ID */
+  /** Called when first assistant reply arrives with new conversation ID */
   onConversationCreated?: (id: string) => void
   /** Called whenever messages change (e.g. to refresh sidebar) */
   onMessagesChange?: () => void
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const formatTime = (ts: number) =>
-  new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────
 
 const ChatGeneration: React.FC<Props> = ({
   conversationId,
@@ -52,19 +50,16 @@ const ChatGeneration: React.FC<Props> = ({
   const [inputValue, setInputValue] = useState('')
   const [isResponding, { setTrue: startResponding, setFalse: stopResponding }] = useBoolean(false)
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([])
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
-  // Suggested questions toggle: user must opt-in; validated via a pre-flight request
-  const [suggestEnabled, setSuggestEnabled] = useState(false)
-  const [suggestChecking, setSuggestChecking] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Refs
   const abortControllerRef = useRef<AbortController>(new AbortController())
   const messageListRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  // Track message count so scroll effect only fires on new messages, not content chunks
-  const messageCountRef = useRef(0)
+  const messageCountRef = useRef<number>(0)
+  const currentTaskIdRef = useRef<string | null>(null)
 
-  // ── Scroll to bottom ───────────────────────────────────────────────────────
+  // ── Scroll to bottom ───────────────────────────────────────────────
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
       if (messageListRef.current)
@@ -72,7 +67,6 @@ const ChatGeneration: React.FC<Props> = ({
     })
   }, [])
 
-  // Only scroll when a new message is appended (count changes), not on every chunk update
   useEffect(() => {
     if (messages.length !== messageCountRef.current) {
       messageCountRef.current = messages.length
@@ -80,198 +74,280 @@ const ChatGeneration: React.FC<Props> = ({
     }
   }, [messages.length, scrollToBottom])
 
-  // ── Reset when switching conversation ─────────────────────────────────────
+  // ── Reset when switching conversation ──────────────────────────────
   useEffect(() => {
     // Abort any in-flight request from the previous conversation
     abortControllerRef.current.abort()
+    abortControllerRef.current = new AbortController()
 
     setMessages([])
     setSuggestedQuestions([])
-    setCurrentTaskId(null)
+    currentTaskIdRef.current = null
     stopResponding()
     messageCountRef.current = 0
-  }, [conversationId])
 
-  // ── Toggle suggested questions (with pre-flight validation) ───────────────
-  const handleSuggestToggle = useCallback(async () => {
-    if (suggestEnabled) {
-      // Turning off — no network call needed
-      setSuggestEnabled(false)
-      setSuggestedQuestions([])
-      return
+    if (!conversationId) return
+
+    const loadConversationHistory = async () => {
+      setLoadingHistory(true)
+      try {
+        const res: any = await fetchMessages(conversationId)
+        if (res?.code) {
+          Toast.notify({ type: 'error', message: res.message || 'Failed to load conversation history' })
+          return
+        }
+
+        if (res?.data && Array.isArray(res.data)) {
+          // Map Dify response fields to frontend format.
+          // Each Dify message contains both query (user) and answer (assistant),
+          // so we reconstruct both sides of the conversation.
+          const normalizedMessages = res.data.map((m: any) => {
+            const assistantMsg: ChatMessage = {
+              id: m.id,
+              conversation_id: m.conversation_id,
+              role: MessageRole.Assistant,
+              content: m.answer || m.content || '',
+              isStreaming: false,
+              feedback: m.feedback,
+              agent_thoughts: m.agent_thoughts || [],
+              created_at: m.created_at,
+            }
+
+            if (m.query && m.query.trim().length > 0) {
+              const userMsg: ChatMessage = {
+                id: `user-${m.id}`,
+                conversation_id: m.conversation_id,
+                role: MessageRole.User,
+                content: m.query,
+                isStreaming: false,
+                agent_thoughts: [],
+                created_at: m.created_at - 1,
+              }
+              return [userMsg, assistantMsg]
+            }
+
+            return assistantMsg
+          })
+          setMessages((normalizedMessages as (ChatMessage | ChatMessage[])[]).flat() as ChatMessage[])
+        }
+      }
+      catch (e: any) {
+        Toast.notify({ type: 'error', message: e.message || 'Failed to load conversation history' })
+      }
+      finally {
+        setLoadingHistory(false)
+      }
     }
 
-    // Turning on — send a pre-flight request using the last message in the current conversation
-    const lastAssistantMsg = [...messages].reverse().find(m => m.role === MessageRole.Assistant && m.id && !m.id.startsWith('assistant-'))
-    if (!lastAssistantMsg) {
-      // No real message ID yet; just enable optimistically — will validate on next real reply
-      setSuggestEnabled(true)
+    loadConversationHistory()
+  }, [conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Toggle suggested questions (with pre-flight validation) ────────
+  const [suggestEnabled, setSuggestEnabled] = useState(false)
+  const [suggestChecking, setSuggestChecking] = useState(false)
+
+  const handleSuggestToggle = useCallback(async () => {
+    if (suggestEnabled) {
+      setSuggestEnabled(false)
       return
     }
 
     setSuggestChecking(true)
     try {
-      const res: any = await fetchSuggestedQuestions(lastAssistantMsg.id)
-      if (res?.data && Array.isArray(res.data)) {
+      const paramsRes: any = await fetchAppParams()
+      if (paramsRes?.data?.suggested_questions_after_answer?.enabled) {
         setSuggestEnabled(true)
-        setSuggestedQuestions(res.data)
       }
       else {
-        setSuggestEnabled(true)
+        Toast.notify({ type: 'error', message: 'Suggested Questions is not enabled in your Dify app settings.' })
       }
     }
-    catch (err: any) {
-      const msg = err?.message || 'Failed to enable suggested questions'
-      Toast.notify({ type: 'error', message: msg })
-      // Do not enable — stay off
+    catch {
+      Toast.notify({ type: 'error', message: 'Could not verify Suggested Questions setting.' })
     }
     finally {
       setSuggestChecking(false)
     }
-  }, [suggestEnabled, messages])
+  }, [suggestEnabled])
 
-  // ── Auto-resize textarea ───────────────────────────────────────────────────
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  // ── Textarea auto-resize ───────────────────────────────────────────
+  const handleTextareaChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value)
-    const ta = e.target
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`
-  }
+    e.target.style.height = 'auto'
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+  }, [])
 
-  // ── Send message ───────────────────────────────────────────────────────────
+  // ── Send message ───────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const query = inputValue.trim()
     if (!query || isResponding) return
 
-    setSuggestedQuestions([])
-
-    // Append user message immediately
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      conversation_id: conversationId || '',
-      role: MessageRole.User,
-      content: query,
-      created_at: Math.floor(Date.now() / 1000),
-    }
-    setMessages(prev => [...prev, userMsg])
     setInputValue('')
     if (textareaRef.current)
       textareaRef.current.style.height = 'auto'
+    setSuggestedQuestions([])
 
-    // Placeholder assistant message (streaming)
-    const assistantMsgId = `assistant-${Date.now()}`
-    const assistantMsg: ChatMessage = {
-      id: assistantMsgId,
-      conversation_id: conversationId || '',
-      role: MessageRole.Assistant,
-      content: '',
-      isStreaming: true,
-      created_at: Math.floor(Date.now() / 1000),
-    }
-    setMessages(prev => [...prev, assistantMsg])
+    // Optimistically append user message
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        role: MessageRole.User,
+        content: query,
+        isStreaming: false,
+        agent_thoughts: [],
+      } as ChatMessage,
+    ])
+
+    // Append empty streaming assistant placeholder
+    const placeholderId = `assistant-${Date.now()}`
+    setMessages(prev => [
+      ...prev,
+      {
+        id: placeholderId,
+        role: MessageRole.Assistant,
+        content: '',
+        isStreaming: true,
+        agent_thoughts: [],
+      } as ChatMessage,
+    ])
+
     startResponding()
 
-    abortControllerRef.current = new AbortController()
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
-    sendChatMessage(
+    // Track the real message ID once the server assigns one
+    let resolvedMsgId = placeholderId
+    let resolvedConvId = conversationId
+
+    await sendChatMessage(
       {
         query,
         inputs: {},
         conversation_id: conversationId || undefined,
       },
       {
-        onData: (chunk, _isFirst, { messageId, conversationId: cid }) => {
+        onData: (text, _isFirst, { conversationId: cid, messageId }) => {
+          if (cid && !resolvedConvId) {
+            resolvedConvId = cid
+            onConversationCreated?.(cid)
+          }
+          if (messageId)
+            resolvedMsgId = messageId
+
           setMessages(prev =>
             prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, id: messageId || m.id, content: m.content + chunk, conversation_id: cid || m.conversation_id }
+              m.id === placeholderId || m.id === resolvedMsgId
+                ? { ...m, id: resolvedMsgId, content: m.content + text, isStreaming: true }
                 : m,
             ),
           )
           scrollToBottom()
-          if (cid && !conversationId && onConversationCreated)
-            onConversationCreated(cid)
         },
-        onAgentMessage: (chunk, _isFirst, { messageId, conversationId: cid }) => {
+
+        onAgentMessage: (text, _isFirst, { conversationId: cid, messageId }) => {
+          if (cid && !resolvedConvId) {
+            resolvedConvId = cid
+            onConversationCreated?.(cid)
+          }
+          if (messageId)
+            resolvedMsgId = messageId
+
           setMessages(prev =>
             prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, id: messageId || m.id, content: m.content + chunk, conversation_id: cid || m.conversation_id }
+              m.id === placeholderId || m.id === resolvedMsgId
+                ? { ...m, id: resolvedMsgId, content: m.content + text, isStreaming: true }
                 : m,
             ),
           )
           scrollToBottom()
-          if (cid && !conversationId && onConversationCreated)
-            onConversationCreated(cid)
         },
-        onAgentThought: (thought: AgentThought) => {
+
+        onAgentThought: (thought) => {
           setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, agent_thoughts: [...(m.agent_thoughts || []), thought] }
-                : m,
-            ),
+            prev.map((m) => {
+              if (m.id !== placeholderId && m.id !== resolvedMsgId) return m
+              const existing = m.agent_thoughts || []
+              const idx = existing.findIndex((t: any) => t.id === thought.data?.id)
+              const newThoughts
+                = idx === -1
+                  ? [...existing, thought.data]
+                  : existing.map((t: any, i: number) => (i === idx ? thought.data : t))
+              return { ...m, agent_thoughts: newThoughts }
+            }),
           )
         },
+
         onMessageEnd: (messageId, cid) => {
+          if (cid && !resolvedConvId) {
+            resolvedConvId = cid
+            onConversationCreated?.(cid)
+          }
+          resolvedMsgId = messageId
+
           setMessages(prev =>
             prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, id: messageId, isStreaming: false, conversation_id: cid }
+              m.id === placeholderId || m.id === resolvedMsgId
+                ? { ...m, id: messageId, isStreaming: false }
                 : m,
             ),
           )
-          stopResponding()
           onMessagesChange?.()
-          // Only fetch suggested questions if the feature is enabled
+
           if (suggestEnabled && messageId) {
             fetchSuggestedQuestions(messageId)
               .then((res: any) => {
-                if (res?.data && Array.isArray(res.data))
+                if (Array.isArray(res?.data))
                   setSuggestedQuestions(res.data)
               })
-              .catch(() => {})
+              .catch(() => { /* silently ignore */ })
           }
         },
+
         onCompleted: () => {
-          // Fallback: ensures streaming stops if message_end wasn't received
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMsgId ? { ...m, isStreaming: false } : m,
-            ),
-          )
+          setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false } : m))
           stopResponding()
         },
+
         onError: (msg) => {
           Toast.notify({ type: 'error', message: msg })
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantMsgId
-                ? { ...m, content: msg || 'Something went wrong.', isStreaming: false }
-                : m,
-            ),
-          )
+          setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false } : m))
           stopResponding()
         },
+
         onTaskId: (taskId) => {
-          setCurrentTaskId(taskId)
+          currentTaskIdRef.current = taskId
         },
-        abortController: abortControllerRef.current,
+
+        abortController,
       },
     )
-  }, [inputValue, isResponding, conversationId, suggestEnabled, onConversationCreated, onMessagesChange, startResponding, stopResponding, scrollToBottom])
+  }, [
+    inputValue,
+    isResponding,
+    conversationId,
+    suggestEnabled,
+    startResponding,
+    stopResponding,
+    scrollToBottom,
+    onConversationCreated,
+    onMessagesChange,
+  ])
 
-  // ── Stop generation ────────────────────────────────────────────────────────
+  // ── Stop responding ────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
     abortControllerRef.current.abort()
-    if (currentTaskId) {
-      try { await stopChatMessage(currentTaskId) } catch (_) {}
+    const taskId = currentTaskIdRef.current
+    if (taskId) {
+      try { await stopChatMessage(taskId) }
+      catch (_) { }
     }
     setMessages(prev => prev.map(m => m.isStreaming ? { ...m, isStreaming: false } : m))
     stopResponding()
-  }, [currentTaskId, stopResponding])
+  }, [stopResponding])
 
-  // ── Keyboard: Enter to send, Shift+Enter for newline ──────────────────────
+  // ── Keyboard: Enter to send, Shift+Enter for newline ──────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -279,13 +355,18 @@ const ChatGeneration: React.FC<Props> = ({
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────
   return (
     <div className={cn(s.chatContainer, 'flex flex-col h-full')}>
-
       {/* Message list */}
       <div ref={messageListRef} className={cn(s.messageList, 'grow')}>
-        {messages.length === 0 && (
+        {loadingHistory && (
+          <div className="flex justify-center items-center h-full">
+            <Loading type="area" />
+          </div>
+        )}
+
+        {!loadingHistory && messages.length === 0 && (
           <div className={s.emptyState}>
             <ChatBubbleOvalLeftEllipsisIcon className={s.emptyStateIcon} />
             <div className={s.emptyStateTitle}>Start a conversation</div>
@@ -309,11 +390,11 @@ const ChatGeneration: React.FC<Props> = ({
             </div>
 
             {/* Bubble content */}
-            <div>
+            <div className={s.messageBody}>
               {/* Agent thoughts */}
               {isAgentApp && msg.agent_thoughts && msg.agent_thoughts.length > 0 && (
                 <div className="mb-2 space-y-1">
-                  {msg.agent_thoughts.map(thought => (
+                  {msg.agent_thoughts.map((thought: any) => (
                     <div key={thought.id} className={s.agentThought}>
                       <div className={s.agentThoughtLabel}>Thinking</div>
                       <div>{thought.thought}</div>
@@ -341,18 +422,15 @@ const ChatGeneration: React.FC<Props> = ({
                     <ReactMarkdown className="prose prose-sm max-w-none break-words">
                       {msg.content || (msg.isStreaming ? ' ' : '')}
                     </ReactMarkdown>
-                    )
+                  )
                   : msg.content}
               </div>
-
-              {/* Timestamp */}
-              <div className={s.messageTime}>{formatTime(msg.created_at)}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Suggested questions */}
+      {/* Suggested questions — outside the scroll area */}
       {suggestEnabled && suggestedQuestions.length > 0 && !isResponding && (
         <div className="px-10 pb-3">
           <div className={s.suggestedList}>
@@ -374,7 +452,7 @@ const ChatGeneration: React.FC<Props> = ({
 
       {/* Input area */}
       <div className={s.inputArea}>
-        {/* Toolbar: suggested questions toggle */}
+        {/* Toolbar */}
         <div className={s.inputToolbar}>
           <button
             className={cn(s.suggestToggle, suggestEnabled && s.suggestToggleActive)}
@@ -383,7 +461,7 @@ const ChatGeneration: React.FC<Props> = ({
             title={suggestEnabled ? 'Disable suggested questions' : 'Enable suggested questions'}
           >
             <SparklesIcon className="w-3.5 h-3.5" />
-            <span>{suggestChecking ? 'Checking…' : 'Suggestions'}</span>
+            <span>Suggestions</span>
           </button>
         </div>
 
@@ -404,7 +482,7 @@ const ChatGeneration: React.FC<Props> = ({
                 <StopIcon className="w-3.5 h-3.5" />
                 <span>Stop</span>
               </button>
-              )
+            )
             : (
               <button
                 className={s.sendButton}
@@ -414,8 +492,9 @@ const ChatGeneration: React.FC<Props> = ({
               >
                 <PaperAirplaneIcon className="w-4 h-4" />
               </button>
-              )}
+            )}
         </div>
+
         <div className={s.inputHint}>
           <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
         </div>
@@ -424,4 +503,4 @@ const ChatGeneration: React.FC<Props> = ({
   )
 }
 
-export default ChatGeneration
+export default React.memo(ChatGeneration)
