@@ -88,6 +88,9 @@ const ChatGeneration: React.FC<Props> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messageCountRef = useRef<number>(0)
   const currentTaskIdRef = useRef<string | null>(null)
+  // Set to true when a new conversation ID is assigned during an active stream,
+  // so the conversationId-change effect doesn't abort the stream or clear messages.
+  const skipNextResetRef = useRef(false)
 
   // ── STT state ──────────────────────────────────────────────────────
   type SttPhase = 'idle' | 'recording' | 'transcribing'
@@ -149,6 +152,13 @@ const ChatGeneration: React.FC<Props> = ({
 
   // ── Reset when switching conversation ──────────────────────────────
   useEffect(() => {
+    // When a new conversation is created mid-stream, the parent updates
+    // conversationId from null → real ID. We must NOT abort or clear in that case.
+    if (skipNextResetRef.current) {
+      skipNextResetRef.current = false
+      return
+    }
+
     // Abort any in-flight request from the previous conversation
     abortControllerRef.current.abort()
     abortControllerRef.current = new AbortController()
@@ -355,18 +365,21 @@ const ChatGeneration: React.FC<Props> = ({
         setTtsState({ status: 'idle' })
       }
       audio.onerror = () => {
+        if (audioBlobUrlRef.current === url) {
+          URL.revokeObjectURL(url)
+          audioBlobUrlRef.current = null
+        }
         setTtsState({ status: 'idle' })
         Toast.notify({ type: 'error', message: t('app.chat.ttsPlaybackFailed') })
       }
 
       setTtsState({ status: 'playing', id: msg.id })
-      audio.play()
+      await audio.play()
     }
     catch (err: any) {
-      Toast.notify({ type: 'error', message: err?.message || t('app.chat.ttsFailed') })
-    }
-    finally {
+      // Reset state only if we're still in loading (play() failed before audio started)
       setTtsState(prev => prev.status === 'loading' ? { status: 'idle' } : prev)
+      Toast.notify({ type: 'error', message: err?.message || t('app.chat.ttsFailed') })
     }
   }, [ttsState])
 
@@ -519,6 +532,7 @@ const ChatGeneration: React.FC<Props> = ({
     const handleStreamChunk = (text: string, _isFirst: boolean, { conversationId: cid, messageId }: { conversationId?: string; messageId?: string }) => {
       if (cid && !resolvedConvId) {
         resolvedConvId = cid
+        skipNextResetRef.current = true
         onConversationCreated?.(cid)
       }
       if (messageId)
@@ -563,6 +577,7 @@ const ChatGeneration: React.FC<Props> = ({
         onMessageEnd: (messageId, cid) => {
           if (cid && !resolvedConvId) {
             resolvedConvId = cid
+            skipNextResetRef.current = true
             onConversationCreated?.(cid)
           }
           resolvedMsgId = messageId
