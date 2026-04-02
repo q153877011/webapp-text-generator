@@ -112,6 +112,9 @@ const ChatGeneration: React.FC<Props> = ({
   const attachedFilesRef = useRef<AttachedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Tracks blob URLs copied into sent message attachments so they can be
+  // revoked on unmount (they outlive attachedFilesRef which is cleared on send).
+  const sentAttachmentUrlsRef = useRef<string[]>([])
 
   // Keep ref in sync so handleSend doesn't need attachedFiles in its deps
   useEffect(() => {
@@ -142,11 +145,13 @@ const ChatGeneration: React.FC<Props> = ({
       if (audioBlobUrlRef.current)
         URL.revokeObjectURL(audioBlobUrlRef.current)
       audioRef.current?.pause()
-      // Revoke any leftover file preview URLs
+      // Revoke any leftover file preview URLs (pending input strip)
       attachedFilesRef.current.forEach(f => {
         if (f.previewUrl)
           URL.revokeObjectURL(f.previewUrl)
       })
+      // Revoke blob URLs that were copied into sent message attachment snapshots
+      sentAttachmentUrlsRef.current.forEach(url => URL.revokeObjectURL(url))
     }
   }, [])
 
@@ -491,18 +496,17 @@ const ChatGeneration: React.FC<Props> = ({
       }))
 
     // Snapshot attachments for display in the user message bubble.
-    // We intentionally do NOT revoke image previewUrls here so they remain
-    // visible in the chat. They will be revoked on component unmount.
+    // previewUrls are kept alive intentionally — they are registered below
+    // for revocation on unmount via sentAttachmentUrlsRef.
     const attachmentSnapshots: MessageAttachment[] = currentFiles.map(f => ({
       name: f.name,
       mimeType: f.mimeType,
       previewUrl: f.previewUrl,
     }))
 
-    // Only revoke previewUrls for files that are NOT images (images keep their
-    // previewUrl alive for the chat bubble; non-image files have no previewUrl anyway).
-    // Image previewUrls will be revoked on component unmount via the cleanup effect.
-    currentFiles.forEach(f => { if (!f.previewUrl) { /* no-op: non-images have no previewUrl */ } })
+    // Register image blob URLs so the unmount cleanup can revoke them.
+    // (attachedFilesRef is cleared on send, so they would otherwise leak.)
+    currentFiles.forEach(f => { if (f.previewUrl) sentAttachmentUrlsRef.current.push(f.previewUrl) })
     setAttachedFiles([])
 
     // Batch both optimistic messages into a single setState call
@@ -736,14 +740,14 @@ const ChatGeneration: React.FC<Props> = ({
                       {/* Attachments shown inside user bubble, above the text */}
                       {msg.attachments && msg.attachments.length > 0 && (
                         <div className={s.msgAttachmentList}>
-                          {msg.attachments.map((att, i) =>
+                          {msg.attachments.map((att) =>
                             att.previewUrl
                               ? (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img key={i} src={att.previewUrl} alt={att.name} className={s.msgAttachmentImg} />
+                                <img key={att.previewUrl} src={att.previewUrl} alt={att.name} className={s.msgAttachmentImg} />
                               )
                               : (
-                                <div key={i} className={s.msgAttachmentDoc}>
+                                <div key={att.name} className={s.msgAttachmentDoc}>
                                   <DocumentIcon className="w-3 h-3 flex-shrink-0" />
                                   <span className={s.msgAttachmentDocName}>{att.name}</span>
                                 </div>
