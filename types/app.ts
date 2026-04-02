@@ -184,6 +184,14 @@ export type AgentThought = {
   message_files: string[]
 }
 
+/** Lightweight snapshot of an attachment stored on a sent user message for display purposes. */
+export type MessageAttachment = {
+  name: string
+  mimeType: string
+  /** Object URL for image thumbnails — revoked on component unmount. */
+  previewUrl?: string
+}
+
 export type ChatMessage = {
   id: string
   conversation_id: string
@@ -194,6 +202,8 @@ export type ChatMessage = {
   isStreaming?: boolean
   feedback?: Feedbacktype
   agent_thoughts?: AgentThought[]
+  /** Files attached to this user message (images / documents). */
+  attachments?: MessageAttachment[]
   created_at: number
 }
 
@@ -204,4 +214,39 @@ export type Conversation = {
   introduction: string
   created_at: number
   updated_at: number
+}
+
+// ────────────────────────────────────────────────
+// File Attachment (multimodal upload)
+// ────────────────────────────────────────────────
+
+export type AttachedFile = {
+  /** Stable client-side identifier (uuid v4) used to key React state updates. */
+  _id: string
+  /** Original browser {@link File} object, kept for re-upload if needed. */
+  file: File
+  /** Display name shown in the preview strip (mirrors `file.name`). */
+  name: string
+  /** File size in bytes (mirrors `file.size`). */
+  size: number
+  /** MIME type string, e.g. `"image/png"` or `"application/pdf"` (mirrors `file.type`). */
+  mimeType: string
+  /**
+   * Dify `upload_file_id` returned by `/v1/files/upload` once the XHR
+   * completes. Empty string while the upload is still in progress.
+   */
+  uploadFileId: string
+  /**
+   * Upload progress as an integer percentage.
+   * - `0–99` — in flight
+   * - `100`  — completed successfully
+   * - `-1`   — upload failed
+   */
+  progress: number
+  /**
+   * Object URL (`blob:…`) created via `URL.createObjectURL` for image
+   * thumbnails. Only populated for `image/*` files; must be revoked
+   * with `URL.revokeObjectURL` when the file is removed or sent.
+   */
+  previewUrl?: string
 }

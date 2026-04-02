@@ -29,7 +29,7 @@ import {
 } from '@/service'
 import { v4 as uuidv4 } from 'uuid'
 import { stripMarkdown, toDifyMessageId } from './utils'
-import type { ChatMessage, AttachedFile } from '@/types/app'
+import type { ChatMessage, AttachedFile, MessageAttachment } from '@/types/app'
 import { MessageRole, TransferMethod } from '@/types/app'
 import type { AppTypeValue } from '@/config'
 import s from './chat-styles.module.css'
@@ -490,8 +490,19 @@ const ChatGeneration: React.FC<Props> = ({
         upload_file_id: f.uploadFileId,
       }))
 
-    // Revoke preview object URLs before clearing to avoid memory leak
-    currentFiles.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl) })
+    // Snapshot attachments for display in the user message bubble.
+    // We intentionally do NOT revoke image previewUrls here so they remain
+    // visible in the chat. They will be revoked on component unmount.
+    const attachmentSnapshots: MessageAttachment[] = currentFiles.map(f => ({
+      name: f.name,
+      mimeType: f.mimeType,
+      previewUrl: f.previewUrl,
+    }))
+
+    // Only revoke previewUrls for files that are NOT images (images keep their
+    // previewUrl alive for the chat bubble; non-image files have no previewUrl anyway).
+    // Image previewUrls will be revoked on component unmount via the cleanup effect.
+    currentFiles.forEach(f => { if (!f.previewUrl) { /* no-op: non-images have no previewUrl */ } })
     setAttachedFiles([])
 
     // Batch both optimistic messages into a single setState call
@@ -506,6 +517,7 @@ const ChatGeneration: React.FC<Props> = ({
         content: query,
         isStreaming: false,
         agent_thoughts: [],
+        attachments: attachmentSnapshots.length > 0 ? attachmentSnapshots : undefined,
         created_at: now,
       } as ChatMessage,
       {
@@ -719,7 +731,29 @@ const ChatGeneration: React.FC<Props> = ({
                       {msg.content || (msg.isStreaming ? ' ' : '')}
                     </ReactMarkdown>
                   )
-                  : msg.content}
+                  : (
+                    <>
+                      {/* Attachments shown inside user bubble, above the text */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className={s.msgAttachmentList}>
+                          {msg.attachments.map((att, i) =>
+                            att.previewUrl
+                              ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img key={i} src={att.previewUrl} alt={att.name} className={s.msgAttachmentImg} />
+                              )
+                              : (
+                                <div key={i} className={s.msgAttachmentDoc}>
+                                  <DocumentIcon className="w-3 h-3 flex-shrink-0" />
+                                  <span className={s.msgAttachmentDocName}>{att.name}</span>
+                                </div>
+                              ),
+                          )}
+                        </div>
+                      )}
+                      {msg.content}
+                    </>
+                  )}
               </div>
 
               {/* TTS speak button — only for completed assistant messages when TTS is enabled */}
