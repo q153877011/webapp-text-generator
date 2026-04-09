@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server'
-import { client, getInfo } from '@/app/api/utils/common'
+import { completionClient, getInfo } from '@/app/api/utils/common'
 
 /**
  * 执行工作流（Workflow Run）
@@ -33,6 +33,6 @@ export async function POST(request: NextRequest) {
     files,
   } = body
   const { user } = getInfo(request)
-  const res = await client.runWorkflow(inputs, user, true, files)
+  const res = await completionClient.runWorkflow(inputs, user, true, files)
   return new Response(res.data as any)
 }

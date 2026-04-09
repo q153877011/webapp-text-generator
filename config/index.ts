@@ -1,8 +1,8 @@
 import type { AppInfo } from '@/types/app'
 
-export const APP_ID = `${process.env.NEXT_PUBLIC_APP_KEY}` // kept for legacy API routes
-export const API_KEY = `${process.env.NEXT_PUBLIC_APP_KEY}`
-export const API_URL = `${process.env.NEXT_PUBLIC_API_URL}`
+export const APP_ID = `${process.env.APP_KEY}` // kept for legacy API routes
+export const API_KEY = `${process.env.APP_KEY}`
+export const API_URL = `${process.env.API_URL}`
 
 export const API_PREFIX = '/api'
 
@@ -21,8 +21,11 @@ export const DEFAULT_VALUE_MAX_LEN = 48
  */
 export type AppTypeValue = 'completion' | 'workflow' | 'chat' | 'agent'
 
-/** Legacy boolean — kept for cool-text-generation which hasn't been migrated yet */
-export const IS_WORKFLOW = false
+/**
+ * Legacy boolean for completion mode — derived from NEXT_PUBLIC_APP_TYPE
+ * so it stays in sync with the new env-var fast path.
+ */
+export const IS_WORKFLOW = process.env.NEXT_PUBLIC_APP_TYPE === 'workflow'
 
 /** Fallback app info — actual info is fetched at runtime via /v1/meta */
 export const APP_INFO: AppInfo = {

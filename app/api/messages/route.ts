@@ -27,15 +27,13 @@ export async function GET(request: NextRequest) {
   const conversationId = searchParams.get('conversation_id')
 
   try {
-    console.log('[messages/route] IS_CHAT_APP:', process.env.NEXT_PUBLIC_APP_TYPE, 'client type:', typeof client)
     const res: any = await client.getConversationMessages(user, conversationId as string)
-    console.log('[messages/route] API response:', res)
     return NextResponse.json(res.data ?? res, {
       headers: setSession(sessionId),
     })
   }
   catch (e: any) {
-    const status = number = e?.response?.status ?? 500
+    const status: number = e?.response?.status ?? 500
     let message = e?.message ?? 'Internal Server Error'
     // If the error message mentions wrong endpoint (Dify 404), map to a user-friendly message
     if (status === 404 && message?.includes('/v1/messages')) {

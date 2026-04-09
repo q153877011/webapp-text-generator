@@ -1,11 +1,11 @@
 'use client'
 import React, { useCallback, useEffect, useState } from 'react'
-import { fetchAppParams, fetchAppMeta } from '@/service'
 import type { AppTypeValue } from '@/config'
 import { setLocaleOnClient } from '@/i18n/client'
+import { resolveAppType } from '@/utils/resolve-app-type'
 import type { Locale } from '@/i18n'
 import { i18n as i18nConfig } from '@/i18n'
-import CoolTextGeneration from './cool-text-generation'
+import Completion from './completion'
 import ChatGeneration from './chat-generation'
 import ConversationSidebar from './conversation-sidebar'
 import Loading from '@/app/components/base/loading'
@@ -14,52 +14,15 @@ import Loading from '@/app/components/base/loading'
  * Root component — detects the app type at runtime by calling the Dify API,
  * then renders the appropriate UI:
  *
- * - completion / workflow → CoolTextGeneration
+ * - completion / workflow → Completion
  * - chat / agent          → ConversationSidebar + ChatGeneration
  *
- * App type is inferred from /v1/parameters:
- *   • has `workflow` key   → 'workflow'
- *   • has `chat_messages`-capable params (speech_to_text / suggested_questions)
- *     but /v1/meta agent_mode hints agent tools → 'agent'
- *   • has speech_to_text or suggested_questions → 'chat'
- *   • otherwise → 'completion'
+ * App type is resolved via resolveAppType() in utils/resolve-app-type.ts:
+ *   • NEXT_PUBLIC_APP_TYPE env var is set and valid → used directly (fast path)
+ *   • otherwise → inferred from /v1/parameters + /v1/meta (dynamic path)
  *
  * If detection fails we fall back to 'completion' so the app always renders.
  */
-
-function detectAppType(params: any, meta: any): AppTypeValue {
-  // Workflow apps have a distinct top-level `workflow` key in their parameters
-  if (params && typeof params === 'object' && 'workflow' in params)
-    return 'workflow'
-
-  // Chat / Agent apps expose speech_to_text or suggested_questions_after_answer
-  const isChatLike
-    = params?.speech_to_text !== undefined
-    || params?.suggested_questions_after_answer !== undefined
-    || params?.text_to_speech !== undefined
-
-  if (!isChatLike)
-    return 'completion'
-
-  // Distinguish agent from plain chat: meta.tool_icons is non-empty for agent apps
-  const hasTools
-    = meta
-    && typeof meta === 'object'
-    && 'tool_icons' in meta
-    && Object.keys(meta.tool_icons || {}).length > 0
-
-  return hasTools ? 'agent' : 'chat'
-}
-
-/** Map Dify locale names to supported i18n locales */
-function difyLocaleToAppLocale(difyLocale: string): Locale | null {
-  const lower = difyLocale.toLowerCase()
-  if (lower === 'zh-hans' || lower === 'zh_hans' || lower.startsWith('zh'))
-    return 'zh-Hans'
-  if (lower.startsWith('en'))
-    return 'en'
-  return null
-}
 
 const THEMES = ['', 'dark', 'cool', 'minimal'] as const
 type Theme = typeof THEMES[number]
@@ -69,40 +32,50 @@ const AppEntry: React.FC = () => {
   const [appParams, setAppParams] = useState<any>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [sidebarRefreshSignal, setSidebarRefreshSignal] = useState(0)
-  const [theme, setTheme] = useState<Theme>('')
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('app-theme')
+      if (saved && THEMES.includes(saved as Theme))
+        return saved as Theme
+    }
+    return ''
+  })
 
   const triggerSidebarRefresh = useCallback(() => {
     setSidebarRefreshSignal(prev => prev + 1)
   }, [])
 
-  // Apply theme to <html> element
+  // Apply theme to <html> element and persist to localStorage
   useEffect(() => {
     document.documentElement.dataset.theme = theme
+    localStorage.setItem('app-theme', theme)
   }, [theme])
 
   const cycleTheme = useCallback(() => {
-    setTheme(prev => {
+    setTheme((prev) => {
       const idx = THEMES.indexOf(prev)
       return THEMES[(idx + 1) % THEMES.length]
     })
   }, [])
 
-  // Detect app type once on mount; also read default_language for locale
+  // Resolve app type once on mount; also read default_language for locale
   useEffect(() => {
     let cancelled = false
-    Promise.all([
-      fetchAppParams().catch(() => null),
-      fetchAppMeta().catch(() => null),
-    ]).then(([params, meta]) => {
+    resolveAppType().then(({ appType, appParams }) => {
       if (cancelled) return
 
-      setAppType(detectAppType(params, meta))
-      setAppParams(params)
+      setAppType(appType)
+      setAppParams(appParams)
 
       // Auto-switch locale from Dify's default_language field
-      const difyLang = (params as any)?.default_language
+      const difyLang = (appParams as any)?.default_language
       if (difyLang) {
-        const locale = difyLocaleToAppLocale(difyLang)
+        const lower = difyLang.toLowerCase()
+        let locale: Locale | null = null
+        if (lower === 'zh-hans' || lower === 'zh_hans' || lower.startsWith('zh'))
+          locale = 'zh-Hans'
+        else if (lower.startsWith('en'))
+          locale = 'en'
         if (locale && locale !== i18nConfig.defaultLocale)
           setLocaleOnClient(locale, /* notReload */ true)
       }
@@ -125,20 +98,20 @@ const AppEntry: React.FC = () => {
   if (appType === 'completion' || appType === 'workflow')
     return (
       <>
-        <CoolTextGeneration />
+        <Completion />
         <button className="themeToggle" onClick={cycleTheme}>{themeLabel}</button>
       </>
     )
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden', background: 'var(--color-bg)' }}>
       <ConversationSidebar
         activeConversationId={activeConversationId}
         onSelectConversation={setActiveConversationId}
         refreshSignal={sidebarRefreshSignal}
         appType={appType}
       />
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden', background: 'var(--color-bg)' }}>
         <ChatGeneration
           conversationId={activeConversationId}
           appType={appType}

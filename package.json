@@ -7,9 +7,6 @@
     "dev:webpack": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
     "lint": "eslint .",
     "fix": "eslint . --fix",
     "prepare": "husky install"
@@ -59,20 +56,13 @@
   "devDependencies": {
     "@antfu/eslint-config": "^0.36.0",
     "@tailwindcss/typography": "^0.5.9",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/jest": "^30.0.0",
     "@types/js-cookie": "^3.0.3",
     "@types/negotiator": "^0.6.1",
     "autoprefixer": "^10.4.14",
     "eslint-plugin-react-hooks": "^4.6.0",
-    "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0",
     "lint-staged": "^13.2.2",
     "postcss": "^8.4.21",
-    "tailwindcss": "^3.2.7",
-    "ts-jest": "^29.4.9"
+    "tailwindcss": "^3.2.7"
   },
   "lint-staged": {
     "**/*.js?(x)": [

@@ -4,27 +4,28 @@ import { getInfo, setSession } from '@/app/api/utils/common'
 import { API_KEY, API_URL } from '@/config'
 
 /**
- * 停止补全消息生成
+ * Stop completion message generation
  *
  * @route POST /api/completion-messages/:taskId/stop
  * @dify  POST /v1/completion-messages/{task_id}/stop
  *
- * @description 停止一个正在流式生成中的 Completion 任务。
- *              前端在用户点击"停止"按钮时调用，同时配合客户端 AbortController 中断 SSE 连接。
- *              仅对 streaming 模式下的任务有效。
+ * @description Stops an in-progress streaming Completion task.
+ *              Called when the user clicks "Stop"; works together with the client-side
+ *              AbortController to cancel the SSE connection.
+ *              Only effective for tasks running in streaming mode.
  *
- * @pathParam taskId {string} 必填 — 任务 ID（从 SSE 事件中的 task_id 字段获取）
+ * @pathParam taskId {string} required — task ID (obtained from the task_id field in SSE events)
  *
- * @requestBody 无需请求体（user 信息由服务端自动填充）
+ * @requestBody none (user info is populated server-side)
  *
- * @cookie session_id {string} 可选 — 用户会话标识
+ * @cookie session_id {string} optional — user session identifier
  *
  * @returns {object} JSON
- *   - result {string} "success" 表示停止成功
+ *   - result {string} "success" when stopped successfully
  *
  * @errorResponse
- *   - 404 — task_id 不存在或任务已完成
- *   - 500 — 服务端内部错误
+ *   - 404 — task_id not found or task already completed
+ *   - 500 — internal server error
  *
  * @example
  *   POST /api/completion-messages/d9e8f7a6-5b4c-3d2e-1f0a-9b8c7d6e5f4a/stop

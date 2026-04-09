@@ -1,28 +1,28 @@
 import { type NextRequest } from 'next/server'
-import { client, getInfo } from '@/app/api/utils/common'
+import { completionClient, getInfo } from '@/app/api/utils/common'
 
 /**
- * 发送补全消息（Completion Message）
+ * Send a completion message (Completion Message)
  *
  * @route POST /api/completion-messages
  * @dify  POST /v1/completion-messages
  *
- * @description 向 Dify Completion 类型应用发送消息并获取流式响应。
- *              适用于单次文本生成场景（非多轮对话），返回 SSE 流。
+ * @description Sends a message to a Dify Completion app and returns a streaming response.
+ *              For single-turn text generation (not multi-turn chat), returns an SSE stream.
  *
  * @requestBody {object} JSON
- *   - inputs  {Record<string, any>} 必填 — 用户输入的变量键值对，对应应用配置的 prompt_variables
- *   - files   {Array<VisionFile>}   可选 — 多模态文件列表（图片等），需先通过 /api/file-upload 上传
+ *   - inputs  {Record<string, any>} required — key-value pairs matching the app's prompt_variables
+ *   - files   {Array<VisionFile>}   optional — multimodal files (images etc.), must be uploaded via /api/file-upload first
  *
- * @cookie session_id {string} 可选 — 用户会话标识，若不存在则自动生成
+ * @cookie session_id {string} optional — user session identifier; auto-generated if absent
  *
- * @returns {ReadableStream} SSE 事件流（text/event-stream）
- *   - event: message   — 逐段生成的文本内容
- *   - event: message_end — 生成结束
+ * @returns {ReadableStream} SSE event stream (text/event-stream)
+ *   - event: message     — streamed text chunk
+ *   - event: message_end — generation complete
  *
  * @example
  *   POST /api/completion-messages
- *   { "inputs": { "topic": "AI 的未来" } }
+ *   { "inputs": { "topic": "The future of AI" } }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json()
@@ -31,6 +31,6 @@ export async function POST(request: NextRequest) {
     files,
   } = body
   const { user } = getInfo(request)
-  const res = await client.createCompletionMessage(inputs, user, true, files)
+  const res = await completionClient.createCompletionMessage(inputs, user, true, files)
   return new Response(res.data as any)
 }

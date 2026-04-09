@@ -22,9 +22,9 @@ import { fetchAppMeta, fetchAppParams, fetchWorkflowLogs, fetchWorkflowRunDetail
 import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
 import { Resolution, TransferMethod } from '@/types/app'
 import { changeLanguage } from '@/i18n/i18next-config'
-import { API_KEY, APP_ID, APP_INFO as DEFAULT_APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
+import { APP_INFO as DEFAULT_APP_INFO, DEFAULT_VALUE_MAX_LEN, IS_WORKFLOW } from '@/config'
 import { userInputsFormToPromptVariables } from '@/utils/prompt'
-import s from './cool-styles.module.css'
+import s from './styles.module.css'
 
 type WorkflowLogItem = {
   id: string
@@ -63,7 +63,7 @@ type Task = {
   params: TaskParam
 }
 
-const CoolTextGeneration = () => {
+const Completion = () => {
   const { t } = useTranslation()
   const media = useBreakpoints()
   const isPC = media === MediaType.pc
@@ -75,7 +75,9 @@ const CoolTextGeneration = () => {
   const isInBatchTab = currTab === 'batch'
 
   // App state
-  const hasSetAppConfig = APP_ID && API_KEY
+  // Note: API key / app ID are server-side only — config validity is determined
+  // by whether the API call succeeds, not by checking values on the client.
+  const hasSetAppConfig = true
   const [appUnavailable, setAppUnavailable] = useState<boolean>(false)
   const [isUnknwonReason, setIsUnknwonReason] = useState<boolean>(false)
   const [inputs, setInputs] = useState<Record<string, any>>({})
@@ -232,7 +234,7 @@ const CoolTextGeneration = () => {
     const batchCompletionResLatest = getBatchCompletionRes()
     const res: Record<string, string> = {}
     const { inputs } = task.params
-    promptConfig?.prompt_variables.forEach((v) => {
+    promptConfig?.prompt_variables?.forEach((v) => {
       res[v.name] = inputs[v.key]
     })
     res[t('app.generation.completionResult')] = batchCompletionResLatest[task.id]
@@ -820,4 +822,4 @@ const CoolTextGeneration = () => {
   )
 }
 
-export default CoolTextGeneration
+export default Completion

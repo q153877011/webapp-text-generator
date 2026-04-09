@@ -7,6 +7,9 @@
 
 .agents/*
 .codebuddy/*
+.claude/*
+CLAUDE.md
+review-opinion/*
 
 # testing
 /coverage

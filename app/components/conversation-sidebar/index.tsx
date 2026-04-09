@@ -1,6 +1,7 @@
 'use client'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import cn from 'classnames'
+import { useTranslation } from 'react-i18next'
 import {
   PlusIcon,
   TrashIcon,
@@ -13,6 +14,7 @@ import Loading from '@/app/components/base/loading'
 import Toast from '@/app/components/base/toast'
 import { fetchConversations, deleteConversation, renameConversation } from '@/service'
 import type { Conversation } from '@/types/app'
+import type { AppTypeValue } from '@/config'
 import s from './sidebar-styles.module.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,6 +26,8 @@ type Props = {
   onSelectConversation: (id: string | null) => void
   /** External signal to reload list (increment to trigger) */
   refreshSignal?: number
+  /** App type, passed from parent */
+  appType?: AppTypeValue
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -33,6 +37,7 @@ const ConversationSidebar: React.FC<Props> = ({
   onSelectConversation,
   refreshSignal,
 }) => {
+  const { t } = useTranslation()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -49,8 +54,8 @@ const ConversationSidebar: React.FC<Props> = ({
       // API returned a Dify error object instead of a list (e.g. not_chat_app)
       if (res?.code) {
         const hint = res.code === 'not_chat_app'
-          ? 'This app is not a Chat/Agent type. Please set NEXT_PUBLIC_APP_TYPE correctly.'
-          : (res.message || 'Failed to load conversations')
+          ? t('app.sidebar.notChatApp')
+          : (res.message || t('app.sidebar.loadFailed'))
         Toast.notify({ type: 'error', message: hint })
         return
       }
@@ -58,12 +63,12 @@ const ConversationSidebar: React.FC<Props> = ({
         setConversations(res.data)
     }
     catch (e: any) {
-      Toast.notify({ type: 'error', message: e.message || 'Failed to load conversations' })
+      Toast.notify({ type: 'error', message: e.message || t('app.sidebar.loadFailed') })
     }
     finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     loadConversations()
@@ -90,7 +95,7 @@ const ConversationSidebar: React.FC<Props> = ({
     try {
       const res: any = await renameConversation(id, trimmed)
       if (res?.code) {
-        Toast.notify({ type: 'error', message: res.message || 'Failed to rename conversation' })
+        Toast.notify({ type: 'error', message: res.message || t('app.sidebar.renameFailed') })
         loadConversations()
         return
       }
@@ -99,7 +104,7 @@ const ConversationSidebar: React.FC<Props> = ({
       )
     }
     catch {
-      Toast.notify({ type: 'error', message: 'Failed to rename conversation' })
+      Toast.notify({ type: 'error', message: t('app.sidebar.renameFailed') })
       loadConversations()
     }
   }
@@ -107,11 +112,11 @@ const ConversationSidebar: React.FC<Props> = ({
   // ── Delete conversation ────────────────────────────────────────────────────
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
-    if (!window.confirm('Delete this conversation?')) return
+    if (!window.confirm(t('app.sidebar.deleteConfirm') as string)) return
     try {
       const res: any = await deleteConversation(id)
       if (res?.code) {
-        Toast.notify({ type: 'error', message: res.message || 'Failed to delete conversation' })
+        Toast.notify({ type: 'error', message: res.message || t('app.sidebar.deleteFailed') })
         return
       }
       setConversations(prev => prev.filter(c => c.id !== id))
@@ -119,17 +124,17 @@ const ConversationSidebar: React.FC<Props> = ({
         onSelectConversation(null)
     }
     catch {
-      Toast.notify({ type: 'error', message: 'Failed to delete conversation' })
+      Toast.notify({ type: 'error', message: t('app.sidebar.deleteFailed') })
     }
   }
 
   // ── Format relative time ───────────────────────────────────────────────────
   const relativeTime = (ts: number) => {
     const diff = Date.now() / 1000 - ts
-    if (diff < 60) return 'just now'
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-    return `${Math.floor(diff / 86400)}d`
+    if (diff < 60) return t('app.sidebar.justNow')
+    if (diff < 3600) return `${Math.floor(diff / 60)}${t('app.sidebar.minutesSuffix')}`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}${t('app.sidebar.hoursSuffix')}`
+    return `${Math.floor(diff / 86400)}${t('app.sidebar.daysSuffix')}`
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -137,13 +142,13 @@ const ConversationSidebar: React.FC<Props> = ({
     <div className={s.sidebar}>
       {/* Header */}
       <div className={s.sidebarHeader}>
-        <div className={s.sidebarTitle}>Conversations</div>
+        <div className={s.sidebarTitle}>{t('app.sidebar.title')}</div>
         <button
           className={s.newChatButton}
           onClick={() => onSelectConversation(null)}
         >
           <PlusIcon className="w-3.5 h-3.5" />
-          New Chat
+          {t('app.sidebar.newChat')}
         </button>
       </div>
 
@@ -158,8 +163,8 @@ const ConversationSidebar: React.FC<Props> = ({
         {!loading && conversations.length === 0 && (
           <div className={s.emptyList}>
             <ChatBubbleLeftRightIcon className="w-8 h-8 text-gray-300" />
-            <div>No conversations yet</div>
-            <div>Start a new chat above</div>
+            <div>{t('app.sidebar.emptyTitle')}</div>
+            <div>{t('app.sidebar.emptyDesc')}</div>
           </div>
         )}
 
@@ -189,14 +194,14 @@ const ConversationSidebar: React.FC<Props> = ({
                   <button
                     className={s.actionBtn}
                     onClick={(e) => { e.stopPropagation(); commitRename(conv.id) }}
-                    title="Save"
+                    title={t('app.sidebar.saveTitle') as string}
                   >
                     <CheckIcon className="w-3.5 h-3.5" />
                   </button>
                   <button
                     className={s.actionBtn}
                     onClick={(e) => { e.stopPropagation(); setRenamingId(null) }}
-                    title="Cancel"
+                    title={t('app.sidebar.cancelTitle') as string}
                   >
                     <XMarkIcon className="w-3.5 h-3.5" />
                   </button>
@@ -205,21 +210,21 @@ const ConversationSidebar: React.FC<Props> = ({
               : (
                 <>
                   <span className={s.convName} title={conv.name}>
-                    {conv.name || 'Untitled'}
+                    {conv.name || t('app.sidebar.untitled')}
                   </span>
                   <span className={s.convTime}>{relativeTime(conv.updated_at || conv.created_at)}</span>
                   <div className={s.actionButtons}>
                     <button
                       className={s.actionBtn}
                       onClick={e => startRename(e, conv)}
-                      title="Rename"
+                      title={t('app.sidebar.renameTitle') as string}
                     >
                       <PencilIcon className="w-3 h-3" />
                     </button>
                     <button
                       className={cn(s.actionBtn, s.actionBtnDanger)}
                       onClick={e => handleDelete(e, conv.id)}
-                      title="Delete"
+                      title={t('app.sidebar.deleteTitle') as string}
                     >
                       <TrashIcon className="w-3 h-3" />
                     </button>

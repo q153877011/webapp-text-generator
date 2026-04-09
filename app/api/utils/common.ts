@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server'
 import { CompletionClient, ChatClient } from 'dify-client'
 import { v4 } from 'uuid'
-import { API_KEY, API_URL, APP_ID, IS_CHAT_APP } from '@/config'
+import { API_KEY, API_URL, APP_ID } from '@/config'
 
 const userPrefix = `user_${APP_ID}:`
 
@@ -18,8 +18,8 @@ export const setSession = (sessionId: string) => {
   return { 'Set-Cookie': `session_id=${sessionId}` }
 }
 
-export const client = IS_CHAT_APP
-  ? new ChatClient(API_KEY, API_URL || undefined)
-  : new CompletionClient(API_KEY, API_URL || undefined)
+export const chatClient = new ChatClient(API_KEY, API_URL || undefined)
+export const completionClient = new CompletionClient(API_KEY, API_URL || undefined)
 
-export const isChatClient = IS_CHAT_APP
+// Default export — kept for routes that haven't been migrated
+export const client = chatClient
