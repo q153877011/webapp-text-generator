@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { API_KEY, API_URL } from '@/config'
-import { getInfo } from '@/app/api/utils/common'
+import { API_KEY } from '@/config'
+import { getInfo, getDifyBaseUrl } from '@/app/api/utils/common'
 
 export async function POST(request: NextRequest) {
   const { user } = getInfo(request)
@@ -8,8 +8,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { text, message_id } = body
 
-  const baseUrl = API_URL.replace(/\/v1\/?$/, '')
-  const res = await fetch(`${baseUrl}/v1/text-to-audio`, {
+  const res = await fetch(`${getDifyBaseUrl()}/v1/text-to-audio`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${API_KEY}`,

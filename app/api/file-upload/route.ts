@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server'
-import { client, getInfo } from '@/app/api/utils/common'
+import { chatClient as client, getInfo } from '@/app/api/utils/common'
 
 /**
  * 文件上传

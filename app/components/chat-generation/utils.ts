@@ -1,3 +1,5 @@
+import { validate as validateUuid } from 'uuid'
+
 /**
  * Strips common Markdown syntax from a string so that it can be fed to
  * a Text-to-Speech engine without reading out raw formatting characters.
@@ -23,9 +25,6 @@ export function stripMarkdown(text: string): string {
     .trim()
 }
 
-/** Regex that matches a standard RFC-4122 UUID (any version). */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 /**
  * Returns the given string if it looks like a valid Dify UUID, otherwise
  * returns `undefined`.  Used to prevent local placeholder IDs (e.g.
@@ -33,5 +32,5 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * `message_id`, which would cause a 400 validation error.
  */
 export function toDifyMessageId(id: string): string | undefined {
-  return UUID_RE.test(id) ? id : undefined
+  return validateUuid(id) ? id : undefined
 }

@@ -18,8 +18,12 @@ export const setSession = (sessionId: string) => {
   return { 'Set-Cookie': `session_id=${sessionId}` }
 }
 
+/**
+ * Returns the Dify base URL without a trailing `/v1` segment.
+ * Audio routes need to call `/v1/audio-to-text` and `/v1/text-to-audio`
+ * directly via fetch (the SDK doesn't expose them), so we strip `/v1` first.
+ */
+export const getDifyBaseUrl = () => API_URL.replace(/\/v1\/?$/, '')
+
 export const chatClient = new ChatClient(API_KEY, API_URL || undefined)
 export const completionClient = new CompletionClient(API_KEY, API_URL || undefined)
-
-// Default export — kept for routes that haven't been migrated
-export const client = chatClient

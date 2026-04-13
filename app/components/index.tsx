@@ -2,9 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import type { AppTypeValue } from '@/config'
 import { setLocaleOnClient } from '@/i18n/client'
-import { resolveAppType } from '@/utils/resolve-app-type'
-import type { Locale } from '@/i18n'
-import { i18n as i18nConfig } from '@/i18n'
+import { resolveAppType, difyLocaleToAppLocale } from '@/utils/resolve-app-type'
 import Completion from './completion'
 import ChatGeneration from './chat-generation'
 import ConversationSidebar from './conversation-sidebar'
@@ -70,13 +68,8 @@ const AppEntry: React.FC = () => {
       // Auto-switch locale from Dify's default_language field
       const difyLang = (appParams as any)?.default_language
       if (difyLang) {
-        const lower = difyLang.toLowerCase()
-        let locale: Locale | null = null
-        if (lower === 'zh-hans' || lower === 'zh_hans' || lower.startsWith('zh'))
-          locale = 'zh-Hans'
-        else if (lower.startsWith('en'))
-          locale = 'en'
-        if (locale && locale !== i18nConfig.defaultLocale)
+        const locale = difyLocaleToAppLocale(difyLang)
+        if (locale)
           setLocaleOnClient(locale, /* notReload */ true)
       }
     })

@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { client, getInfo, setSession } from '@/app/api/utils/common'
+import { chatClient as client, getInfo, setSession } from '@/app/api/utils/common'
 
 /**
  * 获取应用参数配置

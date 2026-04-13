@@ -1,5 +1,5 @@
 'use client'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import cn from 'classnames'
 import { useBoolean, useClickAway } from 'ahooks'
@@ -18,7 +18,7 @@ import Loading from '@/app/components/base/loading'
 import AppUnavailable from '@/app/components/app-unavailable'
 import Toast from '@/app/components/base/toast'
 import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
-import { fetchAppMeta, fetchAppParams, fetchWorkflowLogs, fetchWorkflowRunDetail, updateFeedback } from '@/service'
+import { fetchAppParams, fetchWorkflowLogs, fetchWorkflowRunDetail, updateFeedback } from '@/service'
 import type { Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
 import { Resolution, TransferMethod } from '@/types/app'
 import { changeLanguage } from '@/i18n/i18next-config'
@@ -75,11 +75,8 @@ const Completion = () => {
   const isInBatchTab = currTab === 'batch'
 
   // App state
-  // Note: API key / app ID are server-side only — config validity is determined
-  // by whether the API call succeeds, not by checking values on the client.
-  const hasSetAppConfig = true
   const [appUnavailable, setAppUnavailable] = useState<boolean>(false)
-  const [isUnknwonReason, setIsUnknwonReason] = useState<boolean>(false)
+  const [isUnknownReason, setIsUnknownReason] = useState<boolean>(false)
   const [inputs, setInputs] = useState<Record<string, any>>({})
   const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null)
   const [isResponsing, { setTrue: setResponsingTrue, setFalse: setResponsingFalse }] = useBoolean(false)
@@ -92,7 +89,6 @@ const Completion = () => {
   // Phase 1.3: Dynamic APP_INFO from /meta API
   const [appInfo, setAppInfo] = useState(DEFAULT_APP_INFO)
 
-  // Phase 1.2: History detail state
   const [historyDetailId, setHistoryDetailId] = useState<string | null>(null)
   const [historyDetail, setHistoryDetail] = useState<any>(null)
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false)
@@ -100,10 +96,6 @@ const Completion = () => {
   const handleFeedback = async (feedback: Feedbacktype) => {
     await updateFeedback({ url: `/messages/${messageId}/feedbacks`, body: { rating: feedback.rating } })
     setFeedback(feedback)
-  }
-
-  const logError = (message: string) => {
-    notify({ type: 'error', message })
   }
 
   const checkCanSend = () => {
@@ -118,7 +110,7 @@ const Completion = () => {
       if (!inputs[key]) hasEmptyInput = true
     })
     if (hasEmptyInput) {
-      logError(t('app.errorMessage.valueOfVarRequired'))
+      notify({ type: 'error', message: t('app.errorMessage.valueOfVarRequired') })
       return false
     }
     return !hasEmptyInput
@@ -153,7 +145,6 @@ const Completion = () => {
     }
   }, [notify])
 
-  // Phase 1.2: Load workflow run detail
   const loadHistoryDetail = useCallback(async (runId: string) => {
     setHistoryDetailId(runId)
     setHistoryDetailLoading(true)
@@ -230,16 +221,19 @@ const Completion = () => {
     batchCompletionResRef.current = res
   }
   const getBatchCompletionRes = () => batchCompletionResRef.current
-  const exportRes = allTaskList.map((task) => {
+  const exportRes = useMemo(() => {
     const batchCompletionResLatest = getBatchCompletionRes()
-    const res: Record<string, string> = {}
-    const { inputs } = task.params
-    promptConfig?.prompt_variables?.forEach((v) => {
-      res[v.name] = inputs[v.key]
+    return allTaskList.map((task) => {
+      const res: Record<string, string> = {}
+      const { inputs } = task.params
+      promptConfig?.prompt_variables?.forEach((v) => {
+        res[v.name] = inputs[v.key]
+      })
+      res[t('app.generation.completionResult')] = batchCompletionResLatest[task.id]
+      return res
     })
-    res[t('app.generation.completionResult')] = batchCompletionResLatest[task.id]
-    return res
-  })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTaskList, promptConfig, t])
 
   const checkBatchInputs = (data: string[][]) => {
     if (!data || data.length === 0) {
@@ -261,7 +255,9 @@ const Completion = () => {
       notify({ type: 'error', message: t('app.generation.errorMsg.atLeastOne') })
       return false
     }
-    const allEmptyLineIndexes = payloadData.filter(item => item.every(i => i === '')).map(item => payloadData.indexOf(item))
+    const allEmptyLineIndexes = payloadData.flatMap((item, idx) =>
+      item.every(i => i === '') ? [idx] : [],
+    )
     if (allEmptyLineIndexes.length > 0) {
       let hasMiddleEmptyLine = false
       let startIndex = allEmptyLineIndexes[0] - 1
@@ -370,11 +366,7 @@ const Completion = () => {
 
   // Init
   useEffect(() => {
-    if (!hasSetAppConfig) {
-      setAppUnavailable(true)
-      return
-    }
-    (async () => {
+    ;(async () => {
       try {
         changeLanguage(DEFAULT_APP_INFO.default_language)
         const { user_input_form, file_upload, system_parameters }: any = await fetchAppParams()
@@ -384,25 +376,11 @@ const Completion = () => {
           ...file_upload?.image,
           image_file_size_limit: system_parameters?.image_file_size_limit || 0,
         })
-
-        // Phase 1.3: Fetch app meta info (icon, name, description)
-        try {
-          const meta: any = await fetchAppMeta()
-          if (meta) {
-            setAppInfo(prev => ({
-              ...prev,
-              ...(meta.tool_icons ? { tool_icons: meta.tool_icons } : {}),
-            }))
-          }
-        }
-        catch {
-          // Meta fetch is non-critical, use defaults
-        }
       }
       catch (e: any) {
         if (e.status === 404) setAppUnavailable(true)
         else {
-          setIsUnknwonReason(true)
+          setIsUnknownReason(true)
           setAppUnavailable(true)
         }
       }
@@ -417,7 +395,8 @@ const Completion = () => {
   const [isShowResSidebar, { setTrue: showResSidebar, setFalse: hideResSidebar }] = useBoolean(false)
   const resRef = useRef<HTMLDivElement>(null)
   useClickAway(() => {
-    hideResSidebar()
+    if (isShowResSidebar)
+      hideResSidebar()
   }, resRef)
 
   const renderRes = (task?: Task) => (
@@ -465,7 +444,7 @@ const Completion = () => {
             <div className={s.resultTitle}>
               {t('app.generation.title')}
             </div>
-            <div className={s.resultSubtitle}>Generated output</div>
+            <div className={s.resultSubtitle}>{t('app.generation.generatedOutput')}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -478,7 +457,7 @@ const Completion = () => {
           {allFailedTaskList.length > 0 && (
             <div className="flex items-center gap-2">
               <span className={cn(s.badge, s.badgeError)}>
-                {allFailedTaskList.length} failed
+                {t('app.generation.failedBadge', { count: allFailedTaskList.length })}
               </span>
               <button className={s.retryButton} onClick={handleRetryAllFailedTask}>
                 <ArrowPathIcon className="w-3 h-3" />
@@ -517,7 +496,7 @@ const Completion = () => {
 
   // Loading / Unavailable states
   if (appUnavailable)
-    return <AppUnavailable isUnknwonReason={isUnknwonReason} errMessage={!hasSetAppConfig ? 'Please set APP_ID and API_KEY in config/index.tsx' : ''} />
+    return <AppUnavailable isUnknwonReason={isUnknownReason} errMessage="" />
 
   if (!appInfo || !promptConfig) {
     return (
@@ -551,7 +530,7 @@ const Completion = () => {
             <div className={s.titleArea}>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <span className={s.titleLabel}>Text Generator</span>
+                  <span className={s.titleLabel}>{t('app.generation.textGeneratorLabel')}</span>
                   <h1 className={s.titleMain}>{appInfo.title}</h1>
                   {appInfo.description && (
                     <p className={s.titleDesc}>{appInfo.description}</p>
@@ -562,7 +541,7 @@ const Completion = () => {
                     className={s.ghostButton}
                     onClick={showResSidebar}
                   >
-                    <span>Results</span>
+                    <span>{t('app.generation.resultsButton')}</span>
                     <ArrowRightIcon className="w-3 h-3" />
                   </button>
                 )}
@@ -593,7 +572,7 @@ const Completion = () => {
                 }}
               >
                 <ClockIcon className="w-3.5 h-3.5 inline-block mr-1 -mt-px" />
-                History
+                {t('app.generation.tabs.history')}
               </button>
             </div>
 
@@ -621,7 +600,7 @@ const Completion = () => {
                 <div className={s.historyPanel}>
                   <div className={s.historyHeader}>
                     <div className={s.historyHeaderLeft}>
-                      <span className={s.historyCount}>{historyTotal} runs</span>
+                      <span className={s.historyCount}>{t('app.generation.historyRunsCount', { count: historyTotal })}</span>
                     </div>
                     <button
                       className={s.ghostButton}
@@ -629,7 +608,7 @@ const Completion = () => {
                       style={{ padding: '4px 10px', fontSize: '11px' }}
                     >
                       <ArrowPathIcon className="w-3 h-3" />
-                      <span>Refresh</span>
+                      <span>{t('app.generation.historyRefresh')}</span>
                     </button>
                   </div>
 
@@ -642,8 +621,8 @@ const Completion = () => {
                   {!historyLoading && historyLogs.length === 0 && (
                     <div className={s.historyEmpty}>
                       <ClockIcon className="w-8 h-8 text-gray-300 mb-2" />
-                      <p>No workflow runs yet</p>
-                      <p className="text-xs mt-1">Run a generation to see it here</p>
+                      <p>{t('app.generation.historyEmpty')}</p>
+                      <p className="text-xs mt-1">{t('app.generation.historyEmptyHint')}</p>
                     </div>
                   )}
 
@@ -653,7 +632,7 @@ const Completion = () => {
                         key={log.id}
                         className={cn(s.historyItem, IS_WORKFLOW && s.historyItemClickable)}
                         onClick={() => IS_WORKFLOW && loadHistoryDetail(log.workflow_run.id)}
-                        title={IS_WORKFLOW ? 'Click to view details' : undefined}
+                        title={IS_WORKFLOW ? t('app.generation.historyClickToView') ?? undefined : undefined}
                       >
                         <div className={s.historyItemHeader}>
                           <span className={cn(
@@ -669,11 +648,11 @@ const Completion = () => {
                           </span>
                         </div>
                         <div className={s.historyItemMeta}>
-                          <span>{log.workflow_run.total_steps} steps</span>
+                          <span>{t('app.generation.historySteps', { count: log.workflow_run.total_steps })}</span>
                           <span className={s.historyDot}>·</span>
-                          <span>{log.workflow_run.elapsed_time.toFixed(2)}s</span>
+                          <span>{t('app.generation.historyElapsed', { elapsed: log.workflow_run.elapsed_time.toFixed(2) })}</span>
                           <span className={s.historyDot}>·</span>
-                          <span>{log.workflow_run.total_tokens} tokens</span>
+                          <span>{t('app.generation.historyTokens', { count: log.workflow_run.total_tokens })}</span>
                         </div>
                         {log.workflow_run.error && (
                           <div className={s.historyError}>
@@ -690,7 +669,7 @@ const Completion = () => {
                       onClick={() => loadHistoryLogs(historyPage + 1, true)}
                       disabled={historyLoading}
                     >
-                      {historyLoading ? 'Loading...' : 'Load More'}
+                      {historyLoading ? t('app.generation.historyLoading') : t('app.generation.historyLoadMore')}
                     </button>
                   )}
                 </div>
@@ -740,12 +719,12 @@ const Completion = () => {
         )}
       </div>
 
-      {/* Phase 1.2: History Detail Modal */}
+      {/* History Detail Modal */}
       {historyDetailId && (
         <div className={s.historyDetailOverlay} onClick={closeHistoryDetail}>
           <div className={s.historyDetailPanel} onClick={(e) => e.stopPropagation()}>
             <div className={s.historyDetailHeader}>
-              <span className={s.historyDetailTitle}>Workflow Run Detail</span>
+              <span className={s.historyDetailTitle}>{t('app.generation.historyDetailTitle')}</span>
               <button className={s.ghostButton} onClick={closeHistoryDetail} style={{ padding: '6px 10px' }}>
                 <XMarkIcon className="w-4 h-4" />
               </button>
@@ -760,22 +739,22 @@ const Completion = () => {
                 <>
                   {/* Status & Meta */}
                   <div className={s.historyDetailSection}>
-                    <div className={s.historyDetailSectionTitle}>Overview</div>
+                    <div className={s.historyDetailSectionTitle}>{t('app.generation.historyDetailOverview')}</div>
                     <div className={s.historyDetailMeta}>
                       <div className={s.historyDetailMetaItem}>
-                        <span className={s.historyDetailMetaLabel}>Status</span>
+                        <span className={s.historyDetailMetaLabel}>{t('app.generation.historyDetailStatus')}</span>
                         <span className={s.historyDetailMetaValue}>{historyDetail.status}</span>
                       </div>
                       <div className={s.historyDetailMetaItem}>
-                        <span className={s.historyDetailMetaLabel}>Elapsed</span>
+                        <span className={s.historyDetailMetaLabel}>{t('app.generation.historyDetailElapsed')}</span>
                         <span className={s.historyDetailMetaValue}>{historyDetail.elapsed_time?.toFixed(2)}s</span>
                       </div>
                       <div className={s.historyDetailMetaItem}>
-                        <span className={s.historyDetailMetaLabel}>Tokens</span>
+                        <span className={s.historyDetailMetaLabel}>{t('app.generation.historyDetailTokens')}</span>
                         <span className={s.historyDetailMetaValue}>{historyDetail.total_tokens}</span>
                       </div>
                       <div className={s.historyDetailMetaItem}>
-                        <span className={s.historyDetailMetaLabel}>Steps</span>
+                        <span className={s.historyDetailMetaLabel}>{t('app.generation.historyDetailSteps')}</span>
                         <span className={s.historyDetailMetaValue}>{historyDetail.total_steps}</span>
                       </div>
                     </div>
@@ -784,7 +763,7 @@ const Completion = () => {
                   {/* Inputs */}
                   {historyDetail.inputs && Object.keys(historyDetail.inputs).length > 0 && (
                     <div className={s.historyDetailSection}>
-                      <div className={s.historyDetailSectionTitle}>Inputs</div>
+                      <div className={s.historyDetailSectionTitle}>{t('app.generation.historyDetailInputs')}</div>
                       <div className={s.historyDetailContent}>
                         {JSON.stringify(historyDetail.inputs, null, 2)}
                       </div>
@@ -794,7 +773,7 @@ const Completion = () => {
                   {/* Outputs */}
                   {historyDetail.outputs && Object.keys(historyDetail.outputs).length > 0 && (
                     <div className={s.historyDetailSection}>
-                      <div className={s.historyDetailSectionTitle}>Outputs</div>
+                      <div className={s.historyDetailSectionTitle}>{t('app.generation.historyDetailOutputs')}</div>
                       <div className={s.historyDetailContent}>
                         {typeof historyDetail.outputs === 'string'
                           ? historyDetail.outputs
@@ -806,7 +785,7 @@ const Completion = () => {
                   {/* Error */}
                   {historyDetail.error && (
                     <div className={s.historyDetailSection}>
-                      <div className={s.historyDetailSectionTitle}>Error</div>
+                      <div className={s.historyDetailSectionTitle}>{t('app.generation.historyDetailError')}</div>
                       <div className={s.historyError}>
                         {historyDetail.error}
                       </div>

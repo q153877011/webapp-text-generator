@@ -1,4 +1,6 @@
 import type { AppTypeValue } from '@/config'
+import type { Locale } from '@/i18n'
+import { i18n as i18nConfig } from '@/i18n'
 import { fetchAppParams, fetchAppMeta } from '@/service'
 
 const VALID_TYPES: AppTypeValue[] = ['chat', 'agent', 'workflow', 'completion']
@@ -42,47 +44,55 @@ export interface ResolvedApp {
   appType: AppTypeValue
   /** Raw response from /v1/parameters (null if the request failed). */
   appParams: any
-  /** Raw response from /v1/meta (null if the request failed). */
-  appMeta: any
-  /**
-   * `true` when the type came from the NEXT_PUBLIC_APP_TYPE env var,
-   * `false` when it was inferred by detectAppType().
-   */
-  fromEnv: boolean
 }
 
 /**
  * Resolve the app type, using a two-tier strategy:
  *
  * 1. **Fast path** – if `NEXT_PUBLIC_APP_TYPE` is set to a valid value
- *    (`chat | agent | workflow | completion`), use it directly and skip
- *    the detectAppType() inference step.  The /parameters and /meta
- *    requests are still issued in parallel because the rest of the UI
- *    depends on their payloads (input form, feature flags, app title…).
+ *    (`chat | agent | workflow | completion`), use it directly and only
+ *    fetch /v1/parameters (the UI needs its payload; /meta is skipped).
  *
  * 2. **Dynamic path** – if the env var is absent or invalid, fetch both
- *    endpoints and pass the results through detectAppType().
+ *    endpoints in parallel and pass the results through detectAppType().
  *
  * Both paths always resolve; individual request failures are swallowed
  * and surfaced as `null` in the returned payloads.
  */
 export async function resolveAppType(): Promise<ResolvedApp> {
-  // Always fetch both endpoints — the UI needs them regardless of how the
-  // type is determined.
-  const [params, meta] = await Promise.all([
-    fetchAppParams().catch(() => null),
-    fetchAppMeta().catch(() => null),
-  ])
-
   const envRaw = process.env.NEXT_PUBLIC_APP_TYPE
   const envType = envRaw && VALID_TYPES.includes(envRaw as AppTypeValue)
     ? (envRaw as AppTypeValue)
     : null
 
-  return {
-    appType: envType ?? detectAppType(params, meta),
-    appParams: params,
-    appMeta: meta,
-    fromEnv: envType !== null,
+  if (envType) {
+    const params = await fetchAppParams().catch(() => null)
+    return { appType: envType, appParams: params }
   }
+
+  // Dynamic path: need both endpoints to infer app type
+  const [params, meta] = await Promise.all([
+    fetchAppParams().catch(() => null),
+    fetchAppMeta().catch(() => null),
+  ])
+
+  return {
+    appType: detectAppType(params, meta),
+    appParams: params,
+  }
+}
+
+/**
+ * Maps a Dify `default_language` string (e.g. `"zh-Hans"`, `"en-US"`)
+ * to the app's supported Locale type.  Returns `null` if the language is
+ * unrecognised or already the default locale.
+ */
+export function difyLocaleToAppLocale(difyLang: string): Locale | null {
+  const lower = difyLang.toLowerCase()
+  let locale: Locale | null = null
+  if (lower === 'zh-hans' || lower === 'zh_hans' || lower.startsWith('zh'))
+    locale = 'zh-Hans'
+  else if (lower.startsWith('en'))
+    locale = 'en'
+  return locale && locale !== i18nConfig.defaultLocale ? locale : null
 }
