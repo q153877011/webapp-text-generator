@@ -40,7 +40,7 @@ const RunOnce: FC<IRunOnceProps> = ({
     <div className="">
       <section>
         {/* input form */}
-        <form>
+        <form onSubmit={(e) => { e.preventDefault(); onSend() }}>
           {promptConfig.prompt_variables.map(item => (
             <div className='w-full mt-4' key={item.key}>
               <label className='text-gray-900 text-sm font-medium'>{item.name}</label>
