@@ -13,6 +13,8 @@ import {
   PaperClipIcon,
   DocumentIcon,
   XMarkIcon,
+  HandThumbUpIcon,
+  HandThumbDownIcon,
 } from '@heroicons/react/24/solid'
 import ReactMarkdown from 'react-markdown'
 import Toast from '@/app/components/base/toast'
@@ -26,10 +28,11 @@ import {
   audioToText,
   textToAudio,
   uploadFile,
+  updateFeedback,
 } from '@/service'
 import { v4 as uuidv4 } from 'uuid'
 import { stripMarkdown, toDifyMessageId } from './utils'
-import type { ChatMessage, AttachedFile, MessageAttachment } from '@/types/app'
+import type { ChatMessage, AttachedFile, MessageAttachment, MessageRating } from '@/types/app'
 import { MessageRole, TransferMethod } from '@/types/app'
 import type { AppTypeValue } from '@/config'
 import s from './chat-styles.module.css'
@@ -659,6 +662,31 @@ const ChatGeneration: React.FC<Props> = ({
     stopResponding()
   }, [stopResponding])
 
+  // ── Message feedback (like / dislike) ─────────────────────────────
+  const handleFeedback = useCallback(async (msgId: string, currentRating: MessageRating, action: 'like' | 'dislike') => {
+    // Clicking the active rating again → revoke (set to null)
+    const newRating: MessageRating = currentRating === action ? null : action
+
+    // Optimistic update
+    setMessages(prev =>
+      prev.map(m => m.id === msgId ? { ...m, feedback: { rating: newRating } } : m),
+    )
+
+    try {
+      await updateFeedback({
+        url: `messages/${msgId}/feedbacks`,
+        body: { rating: newRating },
+      })
+    }
+    catch {
+      // Revert on failure
+      setMessages(prev =>
+        prev.map(m => m.id === msgId ? { ...m, feedback: { rating: currentRating } } : m),
+      )
+      Toast.notify({ type: 'error', message: t('app.chat.feedbackFailed') })
+    }
+  }, [t])
+
   // ── Keyboard: Enter to send, Shift+Enter for newline ──────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -779,6 +807,26 @@ const ChatGeneration: React.FC<Props> = ({
                       </>
                     )}
                 </button>
+              )}
+
+              {/* Feedback (like / dislike) — only for completed assistant messages with a real Dify ID */}
+              {msg.role === MessageRole.Assistant && !msg.isStreaming && msg.content && !msg.id.startsWith('assistant-') && (
+                <div className={s.messageActions}>
+                  <button
+                    className={cn(s.feedbackBtn, msg.feedback?.rating === 'like' && s.feedbackBtnActive)}
+                    onClick={() => handleFeedback(msg.id, msg.feedback?.rating ?? null, 'like')}
+                    title={t('app.chat.likeTitle') as string}
+                  >
+                    <HandThumbUpIcon className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    className={cn(s.feedbackBtn, msg.feedback?.rating === 'dislike' && s.feedbackBtnActiveDislike)}
+                    onClick={() => handleFeedback(msg.id, msg.feedback?.rating ?? null, 'dislike')}
+                    title={t('app.chat.dislikeTitle') as string}
+                  >
+                    <HandThumbDownIcon className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
             </div>
           </div>

@@ -508,6 +508,67 @@
   background: var(--color-primary-tint) !important;
 }
 
+/* ── Feedback actions (like / dislike) — shown on hover below assistant bubble ── */
+
+/* Wrapper sitting just below the bubble, initially invisible */
+.messageActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+/* Show when the parent messageBody is hovered */
+.messageBody:hover .messageActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Also keep visible when a button inside is active (rated) */
+.messageActions:has(.feedbackBtnActive) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.feedbackBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+.feedbackBtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-tint);
+}
+.feedbackBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Active state — user already rated */
+.feedbackBtnActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+}
+.feedbackBtnActiveDislike {
+  border-color: var(--color-error);
+  background: var(--color-error-tint);
+  color: var(--color-error);
+}
+
 /* ── Message attachments (shown above user bubble) ── */
 .msgAttachmentList {
   display: flex;

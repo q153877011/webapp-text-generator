@@ -105,6 +105,9 @@ const translation = {
     maxFilesExceeded: 'Maximum {{max}} files allowed.',
     fileUploadFailed: 'Failed to upload {{name}}.',
     historyLoadFailed: 'Failed to load conversation history',
+    likeTitle: 'Like this response',
+    dislikeTitle: 'Dislike this response',
+    feedbackFailed: 'Failed to submit feedback',
   },
   sidebar: {
     title: 'Conversations',

@@ -102,6 +102,9 @@ const translation = {
     maxFilesExceeded: '最多允许附加 {{max}} 个文件。',
     fileUploadFailed: '上传 {{name}} 失败。',
     historyLoadFailed: '加载对话历史失败',
+    likeTitle: '喜欢这个回答',
+    dislikeTitle: '不喜欢这个回答',
+    feedbackFailed: '反馈提交失败',
   },
   sidebar: {
     title: '对话列表',
