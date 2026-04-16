@@ -1,141 +1,136 @@
 # webapp-text-generator
 
-基于 [Dify](https://dify.ai) API 构建的通用 Web 前端，支持将任意 Dify 应用（文本生成、工作流、对话、Agent）一键包装成可部署的 Web App。
+A universal web frontend built on the [Dify](https://dify.ai) API. Wrap any Dify application — text generation, workflow, chat, or Agent — into a deployable Web App with a single click.
 
-## 功能特性
+## Deploy
 
-- **四种应用模式自适应** — 自动检测 Dify 应用类型，无需手动配置
-  - `completion` — 单轮文本生成
-  - `workflow` — 多步骤工作流，含节点追踪面板
-  - `chat` — 多轮对话，带会话历史侧边栏
-- **流式输出** — SSE 实时渲染 Assistant 回复，打字机效果
-- **多模态文件上传** — 支持图片、PDF、Word、Excel、CSV、TXT、Markdown，最多同时附带 5 个文件
-- **语音交互** — 语音转文字输入（STT）、文字转语音播报（TTS），跟随 Dify 应用开关
-- **推荐问题** — 回复完成后自动展示 Dify 配置的建议问题
-- **消息反馈** — 点赞 / 点踩，反馈写入 Dify 后台
-- **批量运行** — CSV 上传批量处理，结果导出为 CSV
-- **多主题** — Warm / Dark / Cool / Minimal 四套主题，localStorage 持久化
-- **国际化** — 中英文切换，跟随 Dify 应用的 `default_language` 自动设置
-- **工作流节点追踪** — 可展开/折叠的节点执行详情，含耗时、Token 用量
+Deploy with EdgeOne Pages.
 
-## 技术栈
+[![EdgeOne Pages deploy](https://cdnstatic.tencentcs.com/edgeone/pages/deploy.svg)](https://edgeone.ai/pages/new?template=dify-frontend&from=github&dify=true)
 
-| 层 | 技术 |
+## Features
+
+- **Adaptive to four app modes** — Automatically detects the Dify app type; no manual configuration needed
+  - `completion` — Single-turn text generation
+  - `workflow` — Multi-step workflow with node tracing panel
+  - `chat` — Multi-turn conversation with conversation history sidebar
+- **Streaming output** — SSE real-time rendering of assistant replies with typewriter effect
+- **Multimodal file upload** — Supports images, PDF, Word, Excel, CSV, TXT, and Markdown; up to 5 files at once
+- **Voice interaction** — Speech-to-text input (STT) and text-to-speech playback (TTS), following the Dify app toggle
+- **Suggested questions** — Automatically displays Dify-configured follow-up questions after a reply
+- **Message feedback** — Like / dislike, feedback is sent to the Dify backend
+- **Batch run** — Upload CSV for batch processing, export results as CSV
+- **Multiple themes** — Warm / Dark / Cool / Minimal, persisted in localStorage
+- **Internationalization** — Chinese / English switch, auto-set based on the Dify app's `default_language`
+- **Workflow node tracing** — Expandable / collapsible node execution details including duration and token usage
+
+## Tech Stack
+
+| Layer | Technology |
 |---|---|
-| 框架 | Next.js 16 (App Router) |
+| Framework | Next.js 16 (App Router) |
 | UI | React 19 + Tailwind CSS 3 |
-| 语言 | TypeScript 5 |
-| API 客户端 | dify-client 2 |
-| Markdown 渲染 | react-markdown + remark-gfm + KaTeX |
-| 代码编辑器 | Monaco Editor |
-| 国际化 | i18next + react-i18next |
-| 工具库 | ahooks · immer · uuid · js-cookie |
+| Language | TypeScript 5 |
+| API Client | dify-client 2 |
+| Markdown Rendering | react-markdown + remark-gfm + KaTeX |
+| Code Editor | Monaco Editor |
+| Internationalization | i18next + react-i18next |
+| Utilities | ahooks · immer · uuid · js-cookie |
 
-## 快速开始
+---
 
-### 1. 配置环境变量
+## Getting Started
 
-复制示例文件并填入你的 Dify 配置：
-
-```bash
-cp .env.example .env.local
-```
-
-```env
-# Dify 应用的 API Key（仅服务端，不暴露到浏览器）
-APP_KEY=app-xxxxxxxxxxxxxxxxxxxxxxxx
-
-# Dify API 地址（Dify Cloud 填 https://api.dify.ai/v1，私有部署填对应地址）
-API_URL=https://api.dify.ai/v1
-
-# 可选：手动指定应用类型，省略则自动检测
-# 有效值：chat | agent | workflow | completion
-NEXT_PUBLIC_APP_TYPE=
-```
-
-> **注意**：`APP_KEY` 和 `API_URL` 仅在服务端使用，不会暴露给浏览器。
-
-### 2. 安装依赖
+### 1. Clone the project
 
 ```bash
+git clone https://github.com/your-org/ai-customer-service.git
+cd ai-customer-service
 npm install
 ```
 
-### 3. 启动开发服务器
+### 2. Configure environment variables
+
+Create a `.env` file in the project root and fill in your Dify app information:
+
+```env
+# Your Dify app API Key (found in Dify Console → App → API Access)
+APP_KEY=app-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Dify API URL (change to your instance URL if self-hosted)
+API_URL=https://api.dify.ai/v1
+
+# Optional: force a specific app type; leave blank for auto-detection
+# Valid values: chat | agent | workflow | completion
+NEXT_PUBLIC_APP_TYPE=
+```
+
+### 3. Start the development server
 
 ```bash
 npm run dev
 ```
 
-访问 [http://localhost:3000](http://localhost:3000)
+Visit `http://localhost:3000` to see the result.
 
-## 应用类型检测逻辑
+### 4. Build for production
 
-若未设置 `NEXT_PUBLIC_APP_TYPE`，启动时并行请求 `/v1/parameters` 和 `/v1/meta`，按以下规则自动推断：
-
-```
-parameters 含 workflow 字段              → workflow
-parameters 含 STT / TTS / 推荐问题字段   → chat 或 agent
-  └ meta.tool_icons 非空                 → agent
-  └ 否则                                 → chat
-其余                                     → completion
+```bash
+npm run build
+npm run start
 ```
 
-设置 `NEXT_PUBLIC_APP_TYPE` 可跳过自动检测，减少一次网络请求，推荐生产环境使用。
+---
 
-## 项目结构
+Setting `NEXT_PUBLIC_APP_TYPE` skips auto-detection and saves one network request — recommended for production.
+
+## Project Structure
 
 ```
 app/
-├── api/                       # Next.js Route Handlers（服务端代理 Dify API）
+├── api/                       # Next.js Route Handlers (server-side Dify API proxy)
 ├── components/
-│   ├── index.tsx              # 根组件：应用类型检测 + 主题切换
-│   ├── chat-generation/       # Chat / Agent 模式主界面
-│   ├── completion/            # Completion / Workflow 模式主界面
-│   ├── conversation-sidebar/  # 会话列表侧边栏
-│   ├── result/                # 输出结果展示（含工作流节点追踪）
-│   ├── run-once/              # 单次运行表单
-│   ├── run-batch/             # 批量运行（CSV）
-│   └── base/                  # 通用 UI 组件
-├── page.tsx                   # 页面入口
+│   ├── index.tsx              # Root component: app type detection + theme switching
+│   ├── chat-generation/       # Chat / Agent mode main UI
+│   ├── completion/            # Completion / Workflow mode main UI
+│   ├── conversation-sidebar/  # Conversation list sidebar
+│   ├── result/                # Output display (incl. workflow node tracing)
+│   ├── run-once/              # Single run form
+│   ├── run-batch/             # Batch run (CSV)
+│   └── base/                  # Shared UI components
+├── page.tsx                   # Page entry
 config/
-└── index.ts                   # 全局配置与环境变量读取
+└── index.ts                   # Global configuration & environment variable loading
 types/
-└── app.ts                     # 全局 TypeScript 类型定义
+└── app.ts                     # Global TypeScript type definitions
 service/
-└── index.ts                   # 服务层（封装所有 Dify API 调用）
+└── index.ts                   # Service layer (wraps all Dify API calls)
 utils/
-└── resolve-app-type.ts        # 应用类型检测逻辑
-i18n/                          # 国际化配置与语言包
+└── resolve-app-type.ts        # App type detection logic
+i18n/                          # Internationalization config & language packs
 ```
 
-## 构建与部署
+## Build & Deploy
 
 ```bash
-# 生产构建
+# Production build
 npm run build
 
-# 本地预览
+# Local preview
 npm start
 ```
 
-### 部署到 Vercel
-
-推荐使用 [Vercel](https://vercel.com/new) 部署，在项目 Environment Variables 中设置 `APP_KEY`、`API_URL`，以及可选的 `NEXT_PUBLIC_APP_TYPE`。
-
-> ⚠️ Vercel Hobby 方案有函数执行时间限制，长响应可能被截断。如需完整流式输出，建议升级到 Pro 或使用自托管方案。
-
-## 开发
+## Development
 
 ```bash
-npm run dev          # 开发服务器（Turbopack）
-npm run dev:webpack  # 开发服务器（Webpack）
-npm run lint         # ESLint 检查
-npm run fix          # ESLint 自动修复
+npm run dev          # Dev server (Turbopack)
+npm run dev:webpack  # Dev server (Webpack)
+npm run lint         # ESLint check
+npm run fix          # ESLint auto-fix
 ```
 
-提交代码时，`lint-staged` 会自动对暂存的 `.ts/.tsx` 文件执行 ESLint 修复，由 Husky 管理 Git hooks。
+On commit, `lint-staged` automatically runs ESLint fixes on staged `.ts/.tsx` files, managed by Husky Git hooks.
 
 ## License
 
-MIT
+MIT © 2025
